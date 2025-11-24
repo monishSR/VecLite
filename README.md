@@ -1,2 +1,2 @@
 # VecLite
-SQLite like storage engine for vector embeddings.
+An embedded Vector DB written entirely in golang.
