@@ -93,7 +93,7 @@ make example
 - ✅ Vector operations (L2, cosine, dot product, normalization)
 - ✅ Persistent storage layer with index persistence
 - ✅ Thread-safe concurrent operations (RWMutex)
-- ✅ Comprehensive test coverage (~60%+)
+- ✅ Comprehensive test coverage
 - ✅ Parallel read/write tests
 - 🚧 HNSW index (planned)
 - 🚧 IVF index (planned)
