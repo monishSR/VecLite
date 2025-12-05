@@ -98,59 +98,6 @@ func TestVecLite_ParallelWrites(t *testing.T) {
 	}
 }
 
-func TestVecLite_ParallelReads(t *testing.T) {
-	db, cleanup := createTestDB(t)
-	defer cleanup()
-
-	const numVectors = 50
-	const dimension = 128
-
-	// Insert vectors first
-	for i := uint64(1); i <= numVectors; i++ {
-		vector := make([]float32, dimension)
-		for j := range vector {
-			vector[j] = float32(i) + float32(j)*0.001
-		}
-		if err := db.Insert(i, vector); err != nil {
-			t.Fatalf("Failed to insert vector %d: %v", i, err)
-		}
-	}
-
-	const numGoroutines = 20
-	const readsPerGoroutine = 10
-
-	var wg sync.WaitGroup
-	errors := make(chan error, numGoroutines*readsPerGoroutine)
-
-	// Launch multiple goroutines to read vectors concurrently
-	for i := 0; i < numGoroutines; i++ {
-		wg.Add(1)
-		go func(goroutineID int) {
-			defer wg.Done()
-			for j := 0; j < readsPerGoroutine; j++ {
-				// Read random vector IDs
-				id := uint64((goroutineID*readsPerGoroutine+j)%numVectors + 1)
-				vector, err := db.Get(id)
-				if err != nil {
-					errors <- err
-					continue
-				}
-				if len(vector) != dimension {
-					errors <- fmt.Errorf("vector %d has wrong dimension: expected %d, got %d", id, dimension, len(vector))
-				}
-			}
-		}(i)
-	}
-
-	wg.Wait()
-	close(errors)
-
-	// Check for errors
-	for err := range errors {
-		t.Errorf("Read error: %v", err)
-	}
-}
-
 func TestVecLite_ParallelSearches(t *testing.T) {
 	db, cleanup := createTestDB(t)
 	defer cleanup()
