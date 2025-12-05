@@ -97,6 +97,7 @@ make example
 - ✅ Parallel read/write tests
 - 🚧 HNSW index (planned)
 - 🚧 IVF index (planned)
+- 🚧 Unblocked Async writes (planned)
 
 ## Features in Detail
 
