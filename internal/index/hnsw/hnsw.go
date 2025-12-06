@@ -471,7 +471,12 @@ func (h *HNSWIndex) ReadVector(id uint64) ([]float32, error) {
 	if h.storage == nil {
 		return nil, errors.New("storage not available")
 	}
-	// Storage handles caching automatically
+	// Optional: Check if node exists in graph (fast map lookup, similar to Flat)
+	// This provides consistency but doesn't affect performance significantly
+	if _, exists := h.nodes[id]; !exists {
+		return nil, fmt.Errorf("vector with ID %d not found in index", id)
+	}
+	// Storage handles caching automatically (same as Flat)
 	return h.storage.ReadVector(id)
 }
 
