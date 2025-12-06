@@ -520,10 +520,34 @@ func (s *Storage) WriteVector(id uint64, vector []float32) error {
 	return nil
 }
 
+// getCachedVector retrieves a vector from cache if available
+// Returns the vector copy and true if found, nil and false otherwise
+// Thread-safe: can be called without holding the lock
+func (s *Storage) getCachedVector(id uint64) ([]float32, bool) {
+	if s.vectorCache == nil {
+		return nil, false
+	}
+	vec, cached := s.vectorCache.Get(id)
+	if !cached {
+		return nil, false
+	}
+	// Return a copy to avoid external modifications
+	vecCopy := make([]float32, len(vec))
+	copy(vecCopy, vec)
+	return vecCopy, true
+}
+
 // ReadVector reads a vector from storage by ID using the index for fast lookup
 // Uses LRU cache to avoid redundant disk reads
-// Note: Uses Lock() instead of RLock() because os.File operations are not thread-safe
+// Optimized: checks cache before acquiring lock to allow concurrent cache hits
 func (s *Storage) ReadVector(id uint64) ([]float32, error) {
+	// Check cache FIRST (before locking) - cache is thread-safe
+	// This allows concurrent cache hits without lock contention
+	if vec, cached := s.getCachedVector(id); cached {
+		return vec, nil
+	}
+
+	// Only acquire lock for cache miss (file I/O needed)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -531,14 +555,9 @@ func (s *Storage) ReadVector(id uint64) ([]float32, error) {
 		return nil, errors.New("storage file not open")
 	}
 
-	// Check cache first if enabled
-	if s.vectorCache != nil {
-		if vec, cached := s.vectorCache.Get(id); cached {
-			// Return a copy to avoid external modifications
-			vecCopy := make([]float32, len(vec))
-			copy(vecCopy, vec)
-			return vecCopy, nil
-		}
+	// Double-check cache after acquiring lock (another goroutine might have added it)
+	if vec, cached := s.getCachedVector(id); cached {
+		return vec, nil
 	}
 
 	// Look up offset in index

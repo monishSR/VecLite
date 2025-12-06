@@ -1,4 +1,4 @@
-package hnsw
+package utils
 
 import (
 	"math"
@@ -6,15 +6,15 @@ import (
 )
 
 func TestCandidateHeap_PushCandidate(t *testing.T) {
-	heap := newCandidateHeap(10)
+	heap := NewCandidateHeap(10)
 
 	// Push candidates with different distances
-	candidates := []candidate{
-		{id: 1, distance: 0.5},
-		{id: 2, distance: 1.2},
-		{id: 3, distance: 0.8},
-		{id: 4, distance: 2.1},
-		{id: 5, distance: 0.3},
+	candidates := []Candidate{
+		{ID: 1, Distance: 0.5},
+		{ID: 2, Distance: 1.2},
+		{ID: 3, Distance: 0.8},
+		{ID: 4, Distance: 2.1},
+		{ID: 5, Distance: 0.3},
 	}
 
 	for _, cand := range candidates {
@@ -28,24 +28,24 @@ func TestCandidateHeap_PushCandidate(t *testing.T) {
 
 	// Verify heap property: worst (largest distance) should be at top
 	worst := heap.Peek()
-	if worst.distance != 2.1 {
-		t.Errorf("Expected worst distance 2.1, got %f", worst.distance)
+	if worst.Distance != 2.1 {
+		t.Errorf("Expected worst distance 2.1, got %f", worst.Distance)
 	}
-	if worst.id != 4 {
-		t.Errorf("Expected worst ID 4, got %d", worst.id)
+	if worst.ID != 4 {
+		t.Errorf("Expected worst ID 4, got %d", worst.ID)
 	}
 }
 
 func TestCandidateHeap_PopCandidate(t *testing.T) {
-	heap := newCandidateHeap(10)
+	heap := NewCandidateHeap(10)
 
 	// Push candidates in order
-	candidates := []candidate{
-		{id: 1, distance: 0.5},
-		{id: 2, distance: 1.2},
-		{id: 3, distance: 2.8},
-		{id: 4, distance: 0.3},
-		{id: 5, distance: 1.5},
+	candidates := []Candidate{
+		{ID: 1, Distance: 0.5},
+		{ID: 2, Distance: 1.2},
+		{ID: 3, Distance: 2.8},
+		{ID: 4, Distance: 0.3},
+		{ID: 5, Distance: 1.5},
 	}
 
 	for _, cand := range candidates {
@@ -56,8 +56,8 @@ func TestCandidateHeap_PopCandidate(t *testing.T) {
 	expectedOrder := []float32{2.8, 1.5, 1.2, 0.5, 0.3}
 	for i, expectedDist := range expectedOrder {
 		popped := heap.PopCandidate()
-		if math.Abs(float64(popped.distance-expectedDist)) > 0.001 {
-			t.Errorf("Pop %d: expected distance %f, got %f", i, expectedDist, popped.distance)
+		if math.Abs(float64(popped.Distance-expectedDist)) > 0.001 {
+			t.Errorf("Pop %d: expected distance %f, got %f", i, expectedDist, popped.Distance)
 		}
 		if heap.Len() != len(expectedOrder)-i-1 {
 			t.Errorf("After pop %d: expected heap size %d, got %d", i, len(expectedOrder)-i-1, heap.Len())
@@ -71,34 +71,34 @@ func TestCandidateHeap_PopCandidate(t *testing.T) {
 }
 
 func TestCandidateHeap_PushAndPop(t *testing.T) {
-	heap := newCandidateHeap(10)
+	heap := NewCandidateHeap(10)
 
 	// Test push-pop cycle
-	heap.PushCandidate(candidate{id: 1, distance: 1.0})
-	heap.PushCandidate(candidate{id: 2, distance: 2.0})
-	heap.PushCandidate(candidate{id: 3, distance: 0.5})
+	heap.PushCandidate(Candidate{ID: 1, Distance: 1.0})
+	heap.PushCandidate(Candidate{ID: 2, Distance: 2.0})
+	heap.PushCandidate(Candidate{ID: 3, Distance: 0.5})
 
 	// Pop worst (should be 2.0)
 	worst := heap.PopCandidate()
-	if worst.distance != 2.0 || worst.id != 2 {
-		t.Errorf("Expected worst candidate {id: 2, distance: 2.0}, got {id: %d, distance: %f}", worst.id, worst.distance)
+	if worst.Distance != 2.0 || worst.ID != 2 {
+		t.Errorf("Expected worst candidate {ID: 2, Distance: 2.0}, got {ID: %d, Distance: %f}", worst.ID, worst.Distance)
 	}
 
 	// Pop next worst (should be 1.0)
 	next := heap.PopCandidate()
-	if next.distance != 1.0 || next.id != 1 {
-		t.Errorf("Expected next candidate {id: 1, distance: 1.0}, got {id: %d, distance: %f}", next.id, next.distance)
+	if next.Distance != 1.0 || next.ID != 1 {
+		t.Errorf("Expected next candidate {ID: 1, Distance: 1.0}, got {ID: %d, Distance: %f}", next.ID, next.Distance)
 	}
 
 	// Pop best (should be 0.5)
 	best := heap.PopCandidate()
-	if best.distance != 0.5 || best.id != 3 {
-		t.Errorf("Expected best candidate {id: 3, distance: 0.5}, got {id: %d, distance: %f}", best.id, best.distance)
+	if best.Distance != 0.5 || best.ID != 3 {
+		t.Errorf("Expected best candidate {ID: 3, Distance: 0.5}, got {ID: %d, Distance: %f}", best.ID, best.Distance)
 	}
 }
 
 func TestCandidateHeap_Peek(t *testing.T) {
-	heap := newCandidateHeap(10)
+	heap := NewCandidateHeap(10)
 
 	// Peek on empty heap should panic
 	func() {
@@ -111,14 +111,14 @@ func TestCandidateHeap_Peek(t *testing.T) {
 	}()
 
 	// Push candidates
-	heap.PushCandidate(candidate{id: 1, distance: 1.5})
-	heap.PushCandidate(candidate{id: 2, distance: 0.8})
-	heap.PushCandidate(candidate{id: 3, distance: 2.2})
+	heap.PushCandidate(Candidate{ID: 1, Distance: 1.5})
+	heap.PushCandidate(Candidate{ID: 2, Distance: 0.8})
+	heap.PushCandidate(Candidate{ID: 3, Distance: 2.2})
 
 	// Peek should return worst without removing
 	worst := heap.Peek()
-	if worst.distance != 2.2 || worst.id != 3 {
-		t.Errorf("Expected worst {id: 3, distance: 2.2}, got {id: %d, distance: %f}", worst.id, worst.distance)
+	if worst.Distance != 2.2 || worst.ID != 3 {
+		t.Errorf("Expected worst {ID: 3, Distance: 2.2}, got {ID: %d, Distance: %f}", worst.ID, worst.Distance)
 	}
 
 	// Heap size should be unchanged
@@ -128,50 +128,50 @@ func TestCandidateHeap_Peek(t *testing.T) {
 }
 
 func TestCandidateHeap_AddCandidate(t *testing.T) {
-	heap := newCandidateHeap(3) // Max size 3
+	heap := NewCandidateHeap(3) // Max size 3
 
 	// Add candidates up to max size
-	heap.AddCandidate(candidate{id: 1, distance: 1.0}, 3)
-	heap.AddCandidate(candidate{id: 2, distance: 2.0}, 3)
-	heap.AddCandidate(candidate{id: 3, distance: 0.5}, 3)
+	heap.AddCandidate(Candidate{ID: 1, Distance: 1.0}, 3)
+	heap.AddCandidate(Candidate{ID: 2, Distance: 2.0}, 3)
+	heap.AddCandidate(Candidate{ID: 3, Distance: 0.5}, 3)
 
 	if heap.Len() != 3 {
 		t.Errorf("Expected heap size 3, got %d", heap.Len())
 	}
 
 	// Add a candidate better than worst (should replace worst)
-	heap.AddCandidate(candidate{id: 4, distance: 0.8}, 3)
+	heap.AddCandidate(Candidate{ID: 4, Distance: 0.8}, 3)
 	if heap.Len() != 3 {
 		t.Errorf("Expected heap size 3 after adding better candidate, got %d", heap.Len())
 	}
 
 	// Worst should now be 1.0 (not 2.0)
 	worst := heap.Peek()
-	if worst.distance != 1.0 {
-		t.Errorf("Expected worst distance 1.0, got %f", worst.distance)
+	if worst.Distance != 1.0 {
+		t.Errorf("Expected worst distance 1.0, got %f", worst.Distance)
 	}
 
 	// Add a candidate worse than all (should be ignored)
-	heap.AddCandidate(candidate{id: 5, distance: 3.0}, 3)
+	heap.AddCandidate(Candidate{ID: 5, Distance: 3.0}, 3)
 	if heap.Len() != 3 {
 		t.Errorf("Expected heap size 3 after adding worse candidate, got %d", heap.Len())
 	}
 	worst = heap.Peek()
-	if worst.distance != 1.0 {
-		t.Errorf("Expected worst distance still 1.0, got %f", worst.distance)
+	if worst.Distance != 1.0 {
+		t.Errorf("Expected worst distance still 1.0, got %f", worst.Distance)
 	}
 }
 
 func TestCandidateHeap_ExtractTop(t *testing.T) {
-	heap := newCandidateHeap(10)
+	heap := NewCandidateHeap(10)
 
 	// Push candidates
-	candidates := []candidate{
-		{id: 1, distance: 0.3},
-		{id: 2, distance: 1.5},
-		{id: 3, distance: 0.8},
-		{id: 4, distance: 2.2},
-		{id: 5, distance: 0.5},
+	candidates := []Candidate{
+		{ID: 1, Distance: 0.3},
+		{ID: 2, Distance: 1.5},
+		{ID: 3, Distance: 0.8},
+		{ID: 4, Distance: 2.2},
+		{ID: 5, Distance: 0.5},
 	}
 
 	for _, cand := range candidates {
@@ -186,15 +186,15 @@ func TestCandidateHeap_ExtractTop(t *testing.T) {
 
 	expected := []float32{0.3, 0.5, 0.8}
 	for i, cand := range top3 {
-		if math.Abs(float64(cand.distance-expected[i])) > 0.001 {
-			t.Errorf("Top %d: expected distance %f, got %f", i, expected[i], cand.distance)
+		if math.Abs(float64(cand.Distance-expected[i])) > 0.001 {
+			t.Errorf("Top %d: expected distance %f, got %f", i, expected[i], cand.Distance)
 		}
 	}
 
 	// Verify they're in best-to-worst order
 	for i := 0; i < len(top3)-1; i++ {
-		if top3[i].distance > top3[i+1].distance {
-			t.Errorf("Candidates not in best-to-worst order: %f > %f", top3[i].distance, top3[i+1].distance)
+		if top3[i].Distance > top3[i+1].Distance {
+			t.Errorf("Candidates not in best-to-worst order: %f > %f", top3[i].Distance, top3[i+1].Distance)
 		}
 	}
 
@@ -205,11 +205,11 @@ func TestCandidateHeap_ExtractTop(t *testing.T) {
 }
 
 func TestCandidateHeap_ExtractTop_MoreThanAvailable(t *testing.T) {
-	heap := newCandidateHeap(10)
+	heap := NewCandidateHeap(10)
 
 	// Push only 2 candidates
-	heap.PushCandidate(candidate{id: 1, distance: 0.5})
-	heap.PushCandidate(candidate{id: 2, distance: 1.0})
+	heap.PushCandidate(Candidate{ID: 1, Distance: 0.5})
+	heap.PushCandidate(Candidate{ID: 2, Distance: 1.0})
 
 	// Try to extract 5 (should only get 2)
 	top := heap.ExtractTop(5)
@@ -224,7 +224,7 @@ func TestCandidateHeap_ExtractTop_MoreThanAvailable(t *testing.T) {
 }
 
 func TestCandidateHeap_ExtractTop_EmptyHeap(t *testing.T) {
-	heap := newCandidateHeap(10)
+	heap := NewCandidateHeap(10)
 
 	// Extract from empty heap
 	top := heap.ExtractTop(5)
@@ -234,32 +234,32 @@ func TestCandidateHeap_ExtractTop_EmptyHeap(t *testing.T) {
 }
 
 func TestCandidateHeap_MaxHeapProperty(t *testing.T) {
-	heap := newCandidateHeap(10)
+	heap := NewCandidateHeap(10)
 
 	// Add many candidates
 	distances := []float32{0.1, 0.9, 0.3, 0.7, 0.2, 0.8, 0.4, 0.6, 0.5}
 	for i, dist := range distances {
-		heap.PushCandidate(candidate{id: uint64(i + 1), distance: dist})
+		heap.PushCandidate(Candidate{ID: uint64(i + 1), Distance: dist})
 	}
 
 	// Verify max-heap property: worst is always at top
 	prevDist := float32(math.MaxFloat32)
 	for heap.Len() > 0 {
 		worst := heap.PopCandidate()
-		if worst.distance > prevDist {
-			t.Errorf("Heap property violated: popped %f after %f", worst.distance, prevDist)
+		if worst.Distance > prevDist {
+			t.Errorf("Heap property violated: popped %f after %f", worst.Distance, prevDist)
 		}
-		prevDist = worst.distance
+		prevDist = worst.Distance
 	}
 }
 
 func TestCandidateHeap_LargeDataset(t *testing.T) {
-	heap := newCandidateHeap(1000)
+	heap := NewCandidateHeap(1000)
 
 	// Add 1000 candidates
 	for i := 0; i < 1000; i++ {
 		dist := float32(i) / 100.0 // Distances from 0.0 to 9.99
-		heap.PushCandidate(candidate{id: uint64(i), distance: dist})
+		heap.PushCandidate(Candidate{ID: uint64(i), Distance: dist})
 	}
 
 	if heap.Len() != 1000 {
@@ -268,8 +268,8 @@ func TestCandidateHeap_LargeDataset(t *testing.T) {
 
 	// Worst should be ~9.99
 	worst := heap.Peek()
-	if worst.distance < 9.9 {
-		t.Errorf("Expected worst distance ~9.99, got %f", worst.distance)
+	if worst.Distance < 9.9 {
+		t.Errorf("Expected worst distance ~9.99, got %f", worst.Distance)
 	}
 
 	// Extract top 10 (should be 0.0 to 0.09)
@@ -281,8 +281,8 @@ func TestCandidateHeap_LargeDataset(t *testing.T) {
 	// Verify they're the best (smallest distances)
 	for i, cand := range top10 {
 		expected := float32(i) / 100.0
-		if math.Abs(float64(cand.distance-expected)) > 0.01 {
-			t.Errorf("Top %d: expected distance ~%f, got %f", i, expected, cand.distance)
+		if math.Abs(float64(cand.Distance-expected)) > 0.01 {
+			t.Errorf("Top %d: expected distance ~%f, got %f", i, expected, cand.Distance)
 		}
 	}
 }
