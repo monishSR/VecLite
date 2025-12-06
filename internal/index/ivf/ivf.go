@@ -1,8 +1,9 @@
-package index
+package ivf
 
 import (
 	"errors"
 
+	"github.com/msr23/veclite/internal/index/types"
 	"github.com/msr23/veclite/internal/storage"
 )
 
@@ -28,7 +29,7 @@ func NewIVFIndex(dimension int, config map[string]any, storage *storage.Storage)
 // Insert adds a vector to the IVF index
 func (i *IVFIndex) Insert(id uint64, vector []float32) error {
 	if len(vector) != i.dimension {
-		return ErrDimensionMismatch
+		return types.ErrDimensionMismatch
 	}
 
 	// TODO: Implement IVF insert
@@ -36,13 +37,13 @@ func (i *IVFIndex) Insert(id uint64, vector []float32) error {
 }
 
 // Search finds the k nearest neighbors using IVF
-func (i *IVFIndex) Search(query []float32, k int) ([]SearchResult, error) {
+func (i *IVFIndex) Search(query []float32, k int) ([]types.SearchResult, error) {
 	if len(query) != i.dimension {
-		return nil, ErrDimensionMismatch
+		return nil, types.ErrDimensionMismatch
 	}
 
 	if k <= 0 {
-		return nil, ErrInvalidK
+		return nil, types.ErrInvalidK
 	}
 
 	// TODO: Implement IVF search
@@ -76,3 +77,4 @@ func (i *IVFIndex) Clear() error {
 	// TODO: Implement
 	return nil
 }
+

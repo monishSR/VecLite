@@ -1,21 +1,34 @@
-package index
+package flat
 
 import (
 	"os"
 	"testing"
 
+	"github.com/msr23/veclite/internal/index/types"
 	"github.com/msr23/veclite/internal/storage"
 )
 
 func TestFlatIndex_Insert(t *testing.T) {
-	index := NewFlatIndex(128, nil) // nil storage for memory-only mode
+	tmpFile := createTempFile(t)
+	defer os.Remove(tmpFile)
+
+	store, err := storage.NewStorage(tmpFile, 0)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	if err := store.Open(); err != nil {
+		t.Fatalf("Failed to open storage: %v", err)
+	}
+	defer store.Close()
+
+	index := NewFlatIndex(128, store)
 
 	vector := make([]float32, 128)
 	for i := range vector {
 		vector[i] = float32(i)
 	}
 
-	err := index.Insert(1, vector)
+	err = index.Insert(1, vector)
 	if err != nil {
 		t.Fatalf("Failed to insert: %v", err)
 	}
@@ -26,7 +39,19 @@ func TestFlatIndex_Insert(t *testing.T) {
 }
 
 func TestFlatIndex_Search(t *testing.T) {
-	index := NewFlatIndex(3, nil) // nil storage for memory-only mode
+	tmpFile := createTempFile(t)
+	defer os.Remove(tmpFile)
+
+	store, err := storage.NewStorage(tmpFile, 0)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	if err := store.Open(); err != nil {
+		t.Fatalf("Failed to open storage: %v", err)
+	}
+	defer store.Close()
+
+	index := NewFlatIndex(3, store)
 
 	// Insert some vectors
 	index.Insert(1, []float32{1.0, 0.0, 0.0})
@@ -54,7 +79,19 @@ func TestFlatIndex_Search(t *testing.T) {
 }
 
 func TestFlatIndex_Delete(t *testing.T) {
-	index := NewFlatIndex(128, nil) // nil storage for memory-only mode
+	tmpFile := createTempFile(t)
+	defer os.Remove(tmpFile)
+
+	store, err := storage.NewStorage(tmpFile, 0)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	if err := store.Open(); err != nil {
+		t.Fatalf("Failed to open storage: %v", err)
+	}
+	defer store.Close()
+
+	index := NewFlatIndex(128, store)
 
 	vector := make([]float32, 128)
 	index.Insert(1, vector)
@@ -63,7 +100,7 @@ func TestFlatIndex_Delete(t *testing.T) {
 		t.Errorf("Expected size 1, got %d", index.Size())
 	}
 
-	err := index.Delete(1)
+	err = index.Delete(1)
 	if err != nil {
 		t.Fatalf("Failed to delete: %v", err)
 	}
@@ -74,20 +111,44 @@ func TestFlatIndex_Delete(t *testing.T) {
 }
 
 func TestFlatIndex_Delete_NonExistent(t *testing.T) {
-	index := NewFlatIndex(128, nil)
+	tmpFile := createTempFile(t)
+	defer os.Remove(tmpFile)
+
+	store, err := storage.NewStorage(tmpFile, 0)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	if err := store.Open(); err != nil {
+		t.Fatalf("Failed to open storage: %v", err)
+	}
+	defer store.Close()
+
+	index := NewFlatIndex(128, store)
 
 	// Deleting non-existent ID should not error
-	err := index.Delete(999)
+	err = index.Delete(999)
 	if err != nil {
 		t.Errorf("Delete should not error for non-existent ID, got: %v", err)
 	}
 }
 
 func TestFlatIndex_ReadVector(t *testing.T) {
-	index := NewFlatIndex(3, nil)
+	tmpFile := createTempFile(t)
+	defer os.Remove(tmpFile)
+
+	store, err := storage.NewStorage(tmpFile, 0)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	if err := store.Open(); err != nil {
+		t.Fatalf("Failed to open storage: %v", err)
+	}
+	defer store.Close()
+
+	index := NewFlatIndex(3, store)
 
 	originalVec := []float32{1.0, 2.0, 3.0}
-	err := index.Insert(1, originalVec)
+	err = index.Insert(1, originalVec)
 	if err != nil {
 		t.Fatalf("Failed to insert: %v", err)
 	}
@@ -110,23 +171,50 @@ func TestFlatIndex_ReadVector(t *testing.T) {
 
 	// Verify it's a copy (modifying readVec shouldn't affect stored vector)
 	readVec[0] = 999.0
-	readVec2, _ := index.ReadVector(1)
+	readVec2, err2 := index.ReadVector(1)
+	if err2 != nil {
+		t.Fatalf("Failed to read vector second time: %v", err2)
+	}
 	if readVec2[0] == 999.0 {
 		t.Error("ReadVector should return a copy, not a reference")
 	}
 }
 
 func TestFlatIndex_ReadVector_NotFound(t *testing.T) {
-	index := NewFlatIndex(128, nil)
+	tmpFile := createTempFile(t)
+	defer os.Remove(tmpFile)
 
-	_, err := index.ReadVector(999)
-	if err == nil {
+	store, err := storage.NewStorage(tmpFile, 0)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	if err := store.Open(); err != nil {
+		t.Fatalf("Failed to open storage: %v", err)
+	}
+	defer store.Close()
+
+	index := NewFlatIndex(128, store)
+
+	_, err2 := index.ReadVector(999)
+	if err2 == nil {
 		t.Error("Expected error when reading non-existent vector")
 	}
 }
 
 func TestFlatIndex_Size(t *testing.T) {
-	index := NewFlatIndex(128, nil)
+	tmpFile := createTempFile(t)
+	defer os.Remove(tmpFile)
+
+	store, err := storage.NewStorage(tmpFile, 0)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	if err := store.Open(); err != nil {
+		t.Fatalf("Failed to open storage: %v", err)
+	}
+	defer store.Close()
+
+	index := NewFlatIndex(128, store)
 
 	if index.Size() != 0 {
 		t.Errorf("Expected initial size 0, got %d", index.Size())
@@ -143,14 +231,29 @@ func TestFlatIndex_Size(t *testing.T) {
 	}
 
 	// Delete one
-	index.Delete(3)
+	err = index.Delete(3)
+	if err != nil {
+		t.Fatalf("Failed to delete: %v", err)
+	}
 	if index.Size() != 4 {
 		t.Errorf("Expected size 4 after delete, got %d", index.Size())
 	}
 }
 
 func TestFlatIndex_Clear(t *testing.T) {
-	index := NewFlatIndex(128, nil)
+	tmpFile := createTempFile(t)
+	defer os.Remove(tmpFile)
+
+	store, err := storage.NewStorage(tmpFile, 0)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	if err := store.Open(); err != nil {
+		t.Fatalf("Failed to open storage: %v", err)
+	}
+	defer store.Close()
+
+	index := NewFlatIndex(128, store)
 
 	// Insert some vectors
 	for i := uint64(1); i <= 3; i++ {
@@ -163,7 +266,7 @@ func TestFlatIndex_Clear(t *testing.T) {
 	}
 
 	// Clear all
-	err := index.Clear()
+	err = index.Clear()
 	if err != nil {
 		t.Fatalf("Failed to clear: %v", err)
 	}
@@ -173,59 +276,107 @@ func TestFlatIndex_Clear(t *testing.T) {
 	}
 
 	// Verify vectors are gone
-	_, err = index.ReadVector(1)
-	if err == nil {
+	_, err2 := index.ReadVector(1)
+	if err2 == nil {
 		t.Error("Vector should not exist after clear")
 	}
 }
 
 func TestFlatIndex_Insert_DimensionMismatch(t *testing.T) {
-	index := NewFlatIndex(128, nil)
+	tmpFile := createTempFile(t)
+	defer os.Remove(tmpFile)
 
-	err := index.Insert(1, make([]float32, 64)) // Wrong dimension
+	store, err := storage.NewStorage(tmpFile, 0)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	if err := store.Open(); err != nil {
+		t.Fatalf("Failed to open storage: %v", err)
+	}
+	defer store.Close()
+
+	index := NewFlatIndex(128, store)
+
+	err = index.Insert(1, make([]float32, 64)) // Wrong dimension
 	if err == nil {
 		t.Error("Expected error for dimension mismatch")
 	}
-	if err != ErrDimensionMismatch {
+	if err != types.ErrDimensionMismatch {
 		t.Errorf("Expected ErrDimensionMismatch, got: %v", err)
 	}
 }
 
 func TestFlatIndex_Search_DimensionMismatch(t *testing.T) {
-	index := NewFlatIndex(3, nil)
+	tmpFile := createTempFile(t)
+	defer os.Remove(tmpFile)
+
+	store, err := storage.NewStorage(tmpFile, 0)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	if err := store.Open(); err != nil {
+		t.Fatalf("Failed to open storage: %v", err)
+	}
+	defer store.Close()
+
+	index := NewFlatIndex(3, store)
 
 	index.Insert(1, []float32{1.0, 2.0, 3.0})
 
-	_, err := index.Search([]float32{1.0, 2.0}, 1) // Wrong dimension
-	if err == nil {
+	_, err2 := index.Search([]float32{1.0, 2.0}, 1) // Wrong dimension
+	if err2 == nil {
 		t.Error("Expected error for dimension mismatch")
 	}
-	if err != ErrDimensionMismatch {
-		t.Errorf("Expected ErrDimensionMismatch, got: %v", err)
+	if err2 != types.ErrDimensionMismatch {
+		t.Errorf("Expected ErrDimensionMismatch, got: %v", err2)
 	}
 }
 
 func TestFlatIndex_Search_InvalidK(t *testing.T) {
-	index := NewFlatIndex(3, nil)
+	tmpFile := createTempFile(t)
+	defer os.Remove(tmpFile)
+
+	store, err := storage.NewStorage(tmpFile, 0)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	if err := store.Open(); err != nil {
+		t.Fatalf("Failed to open storage: %v", err)
+	}
+	defer store.Close()
+
+	index := NewFlatIndex(3, store)
 
 	index.Insert(1, []float32{1.0, 2.0, 3.0})
 
-	_, err := index.Search([]float32{1.0, 2.0, 3.0}, 0)
-	if err == nil {
+	_, err2 := index.Search([]float32{1.0, 2.0, 3.0}, 0)
+	if err2 == nil {
 		t.Error("Expected error for k <= 0")
 	}
-	if err != ErrInvalidK {
-		t.Errorf("Expected ErrInvalidK, got: %v", err)
+	if err2 != types.ErrInvalidK {
+		t.Errorf("Expected ErrInvalidK, got: %v", err2)
 	}
 
-	_, err = index.Search([]float32{1.0, 2.0, 3.0}, -1)
-	if err == nil {
+	_, err3 := index.Search([]float32{1.0, 2.0, 3.0}, -1)
+	if err3 == nil {
 		t.Error("Expected error for k <= 0")
 	}
 }
 
 func TestFlatIndex_Search_EmptyIndex(t *testing.T) {
-	index := NewFlatIndex(3, nil)
+	tmpFile := createTempFile(t)
+	defer os.Remove(tmpFile)
+
+	store, err := storage.NewStorage(tmpFile, 0)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	if err := store.Open(); err != nil {
+		t.Fatalf("Failed to open storage: %v", err)
+	}
+	defer store.Close()
+
+	index := NewFlatIndex(3, store)
 
 	results, err := index.Search([]float32{1.0, 2.0, 3.0}, 5)
 	if err != nil {
@@ -238,7 +389,19 @@ func TestFlatIndex_Search_EmptyIndex(t *testing.T) {
 }
 
 func TestFlatIndex_Search_KGreaterThanAvailable(t *testing.T) {
-	index := NewFlatIndex(3, nil)
+	tmpFile := createTempFile(t)
+	defer os.Remove(tmpFile)
+
+	store, err := storage.NewStorage(tmpFile, 0)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	if err := store.Open(); err != nil {
+		t.Fatalf("Failed to open storage: %v", err)
+	}
+	defer store.Close()
+
+	index := NewFlatIndex(3, store)
 
 	index.Insert(1, []float32{1.0, 0.0, 0.0})
 	index.Insert(2, []float32{0.0, 1.0, 0.0})
@@ -256,7 +419,19 @@ func TestFlatIndex_Search_KGreaterThanAvailable(t *testing.T) {
 }
 
 func TestFlatIndex_Search_VectorField(t *testing.T) {
-	index := NewFlatIndex(3, nil)
+	tmpFile := createTempFile(t)
+	defer os.Remove(tmpFile)
+
+	store, err := storage.NewStorage(tmpFile, 0)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	if err := store.Open(); err != nil {
+		t.Fatalf("Failed to open storage: %v", err)
+	}
+	defer store.Close()
+
+	index := NewFlatIndex(3, store)
 
 	vec1 := []float32{1.0, 0.0, 0.0}
 	vec2 := []float32{0.0, 1.0, 0.0}
@@ -299,14 +474,13 @@ func TestFlatIndex_OpenFlatIndex(t *testing.T) {
 	defer os.Remove(tmpFile.Name())
 
 	// Create storage and write some vectors
-	store, err := storage.NewStorage(tmpFile.Name())
+	store, err := storage.NewStorage(tmpFile.Name(), 0)
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
 	if err := store.Open(); err != nil {
 		t.Fatalf("Failed to open storage: %v", err)
 	}
-	defer store.Close()
 
 	// Write vectors
 	store.WriteVector(1, []float32{1.0, 2.0, 3.0})
@@ -314,7 +488,7 @@ func TestFlatIndex_OpenFlatIndex(t *testing.T) {
 	store.Close()
 
 	// Reopen storage
-	store2, err := storage.NewStorage(tmpFile.Name())
+	store2, err := storage.NewStorage(tmpFile.Name(), 0)
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
@@ -361,20 +535,19 @@ func TestFlatIndex_OpenFlatIndex_DimensionMismatch(t *testing.T) {
 	defer os.Remove(tmpFile.Name())
 
 	// Create storage and write vector with wrong dimension
-	store, err := storage.NewStorage(tmpFile.Name())
+	store, err := storage.NewStorage(tmpFile.Name(), 0)
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
 	if err := store.Open(); err != nil {
 		t.Fatalf("Failed to open storage: %v", err)
 	}
-	defer store.Close()
 
 	store.WriteVector(1, []float32{1.0, 2.0}) // 2D vector
 	store.Close()
 
 	// Try to open with dimension 3
-	store2, err := storage.NewStorage(tmpFile.Name())
+	store2, err := storage.NewStorage(tmpFile.Name(), 0)
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
@@ -383,8 +556,19 @@ func TestFlatIndex_OpenFlatIndex_DimensionMismatch(t *testing.T) {
 	}
 	defer store2.Close()
 
-	_, err = OpenFlatIndex(3, store2)
-	if err == nil {
+	_, err2 := OpenFlatIndex(3, store2)
+	if err2 == nil {
 		t.Error("Expected error for dimension mismatch")
 	}
 }
+
+// Helper function to create a temporary file
+func createTempFile(t *testing.T) string {
+	tmpFile, err := os.CreateTemp("", "veclite_test_*.db")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	tmpFile.Close()
+	return tmpFile.Name()
+}
+

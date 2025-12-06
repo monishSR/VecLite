@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
+
+	lru "github.com/hashicorp/golang-lru/v2"
 )
 
 const (
@@ -15,21 +18,42 @@ const (
 
 // Storage handles persistent storage of vectors and metadata
 type Storage struct {
-	filePath string
-	file     *os.File
-	index    map[uint64]int64 // Index: ID -> file offset for fast lookups
+	mu          sync.RWMutex // Protects file I/O and index map
+	filePath    string
+	file        *os.File
+	index       map[uint64]int64              // Index: ID -> file offset for fast lookups
+	vectorCache *lru.Cache[uint64, []float32] // LRU cache for vectors
 }
 
 // NewStorage creates a new storage instance
-func NewStorage(filePath string) (*Storage, error) {
+// cacheCapacity: 0 = disabled, >0 = cache size (default: 1000 if < 0)
+func NewStorage(filePath string, cacheCapacity int) (*Storage, error) {
+	// Default cache capacity if negative
+	if cacheCapacity < 0 {
+		cacheCapacity = 1000
+	}
+
+	var cache *lru.Cache[uint64, []float32]
+	if cacheCapacity > 0 {
+		var err error
+		cache, err = lru.New[uint64, []float32](cacheCapacity)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create LRU cache: %w", err)
+		}
+	}
+
 	return &Storage{
-		filePath: filePath,
-		index:    make(map[uint64]int64),
+		filePath:    filePath,
+		index:       make(map[uint64]int64),
+		vectorCache: cache,
 	}, nil
 }
 
 // Open opens the storage file and loads the index
 func (s *Storage) Open() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	var err error
 	s.file, err = os.OpenFile(s.filePath, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
@@ -46,6 +70,7 @@ func (s *Storage) Open() error {
 }
 
 // loadIndex reads the index from the end of the file
+// Note: Assumes lock is already held (called from Open)
 func (s *Storage) loadIndex() error {
 	if s.file == nil {
 		return errors.New("storage file not open")
@@ -120,6 +145,7 @@ func (s *Storage) loadIndex() error {
 }
 
 // saveIndex writes the index to the end of the file
+// Note: Assumes lock is already held (called from Sync/Close)
 func (s *Storage) saveIndex() error {
 	if s.file == nil {
 		return errors.New("storage file not open")
@@ -183,6 +209,7 @@ func (s *Storage) saveIndex() error {
 
 // rebuildIndex scans the file and builds the ID -> offset index
 // This is used as a fallback when loadIndex() fails (new file, corrupted index, etc.)
+// Note: Assumes lock is already held (called from Open)
 func (s *Storage) rebuildIndex() error {
 	if s.file == nil {
 		return errors.New("storage file not open")
@@ -279,15 +306,87 @@ func (s *Storage) rebuildIndex() error {
 }
 
 // compact removes all tombstones and rewrites the file with only active vectors
+// Note: Assumes lock is already held (called from Close)
 func (s *Storage) compact() error {
 	if s.file == nil {
 		return errors.New("storage file not open")
 	}
 
-	// Read all active vectors (skip tombstones)
-	vectors, err := s.ReadAllVectors()
+	// Read all active vectors directly (skip tombstones) - inline ReadAllVectors logic
+	fileInfo, err := s.file.Stat()
 	if err != nil {
-		return fmt.Errorf("failed to read vectors for compaction: %w", err)
+		return err
+	}
+	fileSize := fileInfo.Size()
+
+	// Find where data ends (before index)
+	dataEnd := fileSize
+	if fileSize >= 4 {
+		// Check for index marker
+		if _, err := s.file.Seek(-4, io.SeekEnd); err == nil {
+			var marker uint32
+			if err := binary.Read(s.file, binary.LittleEndian, &marker); err == nil && marker == indexMarker {
+				// Index exists, find where it starts
+				if _, err := s.file.Seek(-8, io.SeekEnd); err == nil {
+					var count uint32
+					if err := binary.Read(s.file, binary.LittleEndian, &count); err == nil {
+						indexSize := int64(count * 16)     // Each entry: 8 bytes ID + 8 bytes offset
+						dataEnd = fileSize - 8 - indexSize // 8 bytes for count + marker
+						if dataEnd < 0 {
+							dataEnd = 0
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Seek to beginning and read all active vectors
+	if _, err := s.file.Seek(0, 0); err != nil {
+		return err
+	}
+
+	vectors := make(map[uint64][]float32)
+	for {
+		currentPos, err := s.file.Seek(0, io.SeekCurrent)
+		if err != nil {
+			return err
+		}
+		if currentPos >= dataEnd {
+			break
+		}
+
+		var id uint64
+		if err := binary.Read(s.file, binary.LittleEndian, &id); err != nil {
+			if err == io.EOF {
+				break
+			}
+			if len(vectors) == 0 {
+				return err
+			}
+			break
+		}
+
+		var dim uint32
+		if err := binary.Read(s.file, binary.LittleEndian, &dim); err != nil {
+			if err == io.EOF {
+				break
+			}
+			return err
+		}
+
+		vector := make([]float32, dim)
+		if err := binary.Read(s.file, binary.LittleEndian, &vector); err != nil {
+			if err == io.EOF {
+				break
+			}
+			return err
+		}
+
+		// Skip deleted vectors (tombstones)
+		if id != deletedID {
+			vectors[id] = vector
+		}
 	}
 
 	// If no vectors, just truncate
@@ -296,6 +395,10 @@ func (s *Storage) compact() error {
 			return err
 		}
 		s.index = make(map[uint64]int64)
+		// Clear cache if enabled
+		if s.vectorCache != nil {
+			s.vectorCache.Purge()
+		}
 		return nil
 	}
 
@@ -312,10 +415,43 @@ func (s *Storage) compact() error {
 	// Rebuild index
 	s.index = make(map[uint64]int64)
 
-	// Rewrite all active vectors
+	// Clear cache if enabled
+	if s.vectorCache != nil {
+		s.vectorCache.Purge()
+	}
+
+	// Rewrite all active vectors directly - inline WriteVector logic
 	for vecID, vector := range vectors {
-		if err := s.WriteVector(vecID, vector); err != nil {
+		// Get current offset (where this vector will start)
+		offset, err := s.file.Seek(0, io.SeekEnd)
+		if err != nil {
 			return fmt.Errorf("failed to rewrite vector %d: %w", vecID, err)
+		}
+
+		// Write ID (8 bytes)
+		if err := binary.Write(s.file, binary.LittleEndian, vecID); err != nil {
+			return fmt.Errorf("failed to rewrite vector %d: %w", vecID, err)
+		}
+
+		// Write dimension (4 bytes)
+		dim := uint32(len(vector))
+		if err := binary.Write(s.file, binary.LittleEndian, dim); err != nil {
+			return fmt.Errorf("failed to rewrite vector %d: %w", vecID, err)
+		}
+
+		// Write vector data
+		if err := binary.Write(s.file, binary.LittleEndian, vector); err != nil {
+			return fmt.Errorf("failed to rewrite vector %d: %w", vecID, err)
+		}
+
+		// Update index
+		s.index[vecID] = offset
+
+		// Update cache if enabled
+		if s.vectorCache != nil {
+			vecCopy := make([]float32, len(vector))
+			copy(vecCopy, vector)
+			s.vectorCache.Add(vecID, vecCopy)
 		}
 	}
 
@@ -324,6 +460,9 @@ func (s *Storage) compact() error {
 
 // Close closes the storage file, compacts tombstones, and saves the index
 func (s *Storage) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if s.file != nil {
 		// Compact file to remove tombstones before closing
 		if err := s.compact(); err != nil {
@@ -344,13 +483,17 @@ func (s *Storage) Close() error {
 }
 
 // WriteVector writes a vector to storage
+// Always appends to the end of the file
 func (s *Storage) WriteVector(id uint64, vector []float32) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if s.file == nil {
 		return errors.New("storage file not open")
 	}
 
-	// Get current offset (where this vector starts)
-	offset, err := s.file.Seek(0, io.SeekCurrent)
+	// Seek to end of file to append (get offset where this vector will start)
+	offset, err := s.file.Seek(0, io.SeekEnd)
 	if err != nil {
 		return err
 	}
@@ -378,9 +521,24 @@ func (s *Storage) WriteVector(id uint64, vector []float32) error {
 }
 
 // ReadVector reads a vector from storage by ID using the index for fast lookup
+// Uses LRU cache to avoid redundant disk reads
+// Note: Uses Lock() instead of RLock() because os.File operations are not thread-safe
 func (s *Storage) ReadVector(id uint64) ([]float32, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if s.file == nil {
 		return nil, errors.New("storage file not open")
+	}
+
+	// Check cache first if enabled
+	if s.vectorCache != nil {
+		if vec, cached := s.vectorCache.Get(id); cached {
+			// Return a copy to avoid external modifications
+			vecCopy := make([]float32, len(vec))
+			copy(vecCopy, vec)
+			return vecCopy, nil
+		}
 	}
 
 	// Look up offset in index
@@ -415,13 +573,25 @@ func (s *Storage) ReadVector(id uint64) ([]float32, error) {
 		return nil, err
 	}
 
+	// Cache it if cache is enabled (make a copy to avoid external modifications)
+	if s.vectorCache != nil {
+		vecCopy := make([]float32, len(vector))
+		copy(vecCopy, vector)
+		s.vectorCache.Add(id, vecCopy)
+		return vecCopy, nil
+	}
+
 	return vector, nil
 }
 
 // ReadAllVectors reads all vectors from storage sequentially
 // Returns a map of ID -> vector
 // Stops at data boundary (before index section)
+// Note: Uses Lock() instead of RLock() because os.File operations are not thread-safe
 func (s *Storage) ReadAllVectors() (map[uint64][]float32, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if s.file == nil {
 		return nil, errors.New("storage file not open")
 	}
@@ -514,8 +684,16 @@ func (s *Storage) ReadAllVectors() (map[uint64][]float32, error) {
 // DeleteVector marks a vector as deleted using a tombstone (ID = 0)
 // This is much more efficient than rewriting the entire file
 func (s *Storage) DeleteVector(id uint64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if s.file == nil {
 		return errors.New("storage file not open")
+	}
+
+	// Remove from cache if enabled
+	if s.vectorCache != nil {
+		s.vectorCache.Remove(id)
 	}
 
 	// Check if vector exists in index
@@ -565,8 +743,16 @@ func (s *Storage) DeleteVector(id uint64) error {
 // Clear removes all vectors from storage
 // Truncates the file and clears the index
 func (s *Storage) Clear() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if s.file == nil {
 		return errors.New("storage file not open")
+	}
+
+	// Clear cache if enabled
+	if s.vectorCache != nil {
+		s.vectorCache.Purge()
 	}
 
 	// Truncate file to remove all data
@@ -585,8 +771,16 @@ func (s *Storage) Clear() error {
 	return nil
 }
 
+// GetFilePath returns the file path of the storage
+func (s *Storage) GetFilePath() string {
+	return s.filePath
+}
+
 // Sync flushes data to disk and saves the index
 func (s *Storage) Sync() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if s.file != nil {
 		// Save index
 		if err := s.saveIndex(); err != nil {

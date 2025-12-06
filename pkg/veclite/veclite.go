@@ -26,15 +26,17 @@ type Config struct {
 	M              int // HNSW parameter
 	EfConstruction int // HNSW parameter
 	EfSearch       int // HNSW parameter
+	CacheCapacity  int // LRU cache capacity (0 = disabled, default: 1000)
 }
 
 // DefaultConfig returns a default configuration
 func DefaultConfig() *Config {
 	return &Config{
-		DataPath:    "./veclite.db",
-		Dimension:   128,
-		IndexType:   "flat",
-		MaxElements: 10000,
+		DataPath:      "./veclite.db",
+		Dimension:     128,
+		IndexType:     "flat",
+		MaxElements:   10000,
+		CacheCapacity: 1000, // Default cache capacity
 	}
 }
 
@@ -48,8 +50,13 @@ func New(config *Config) (*VecLite, error) {
 		return nil, errors.New("dimension must be greater than 0")
 	}
 
-	// Initialize storage
-	store, err := storage.NewStorage(config.DataPath)
+	// Initialize storage with cache capacity
+	cacheCapacity := 1000 // Default
+	if config.CacheCapacity >= 0 {
+		cacheCapacity = config.CacheCapacity
+	}
+
+	store, err := storage.NewStorage(config.DataPath, cacheCapacity)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create storage: %w", err)
 	}

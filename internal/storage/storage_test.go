@@ -6,7 +6,7 @@ import (
 )
 
 func TestNewStorage(t *testing.T) {
-	s, err := NewStorage("test.db")
+	s, err := NewStorage("test.db", 0)
 	if err != nil {
 		t.Fatalf("NewStorage failed: %v", err)
 	}
@@ -25,7 +25,7 @@ func TestOpen_NewFile(t *testing.T) {
 	tmpFile := createTempFile(t)
 	defer os.Remove(tmpFile)
 
-	s, err := NewStorage(tmpFile)
+	s, err := NewStorage(tmpFile, 0)
 	if err != nil {
 		t.Fatalf("NewStorage failed: %v", err)
 	}
@@ -46,7 +46,7 @@ func TestWriteVector_ReadVector(t *testing.T) {
 	tmpFile := createTempFile(t)
 	defer os.Remove(tmpFile)
 
-	s, err := NewStorage(tmpFile)
+	s, err := NewStorage(tmpFile, 0)
 	if err != nil {
 		t.Fatalf("NewStorage failed: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestWriteVector_Multiple(t *testing.T) {
 	tmpFile := createTempFile(t)
 	defer os.Remove(tmpFile)
 
-	s, err := NewStorage(tmpFile)
+	s, err := NewStorage(tmpFile, 0)
 	if err != nil {
 		t.Fatalf("NewStorage failed: %v", err)
 	}
@@ -145,7 +145,7 @@ func TestReadVector_NotFound(t *testing.T) {
 	tmpFile := createTempFile(t)
 	defer os.Remove(tmpFile)
 
-	s, err := NewStorage(tmpFile)
+	s, err := NewStorage(tmpFile, 0)
 	if err != nil {
 		t.Fatalf("NewStorage failed: %v", err)
 	}
@@ -166,7 +166,7 @@ func TestDeleteVector(t *testing.T) {
 	tmpFile := createTempFile(t)
 	defer os.Remove(tmpFile)
 
-	s, err := NewStorage(tmpFile)
+	s, err := NewStorage(tmpFile, 0)
 	if err != nil {
 		t.Fatalf("NewStorage failed: %v", err)
 	}
@@ -211,7 +211,7 @@ func TestDeleteVector_NonExistent(t *testing.T) {
 	tmpFile := createTempFile(t)
 	defer os.Remove(tmpFile)
 
-	s, err := NewStorage(tmpFile)
+	s, err := NewStorage(tmpFile, 0)
 	if err != nil {
 		t.Fatalf("NewStorage failed: %v", err)
 	}
@@ -231,7 +231,7 @@ func TestReadAllVectors(t *testing.T) {
 	tmpFile := createTempFile(t)
 	defer os.Remove(tmpFile)
 
-	s, err := NewStorage(tmpFile)
+	s, err := NewStorage(tmpFile, 0)
 	if err != nil {
 		t.Fatalf("NewStorage failed: %v", err)
 	}
@@ -289,7 +289,7 @@ func TestReadAllVectors_SkipsTombstones(t *testing.T) {
 	tmpFile := createTempFile(t)
 	defer os.Remove(tmpFile)
 
-	s, err := NewStorage(tmpFile)
+	s, err := NewStorage(tmpFile, 0)
 	if err != nil {
 		t.Fatalf("NewStorage failed: %v", err)
 	}
@@ -343,7 +343,7 @@ func TestIndexPersistence(t *testing.T) {
 	defer os.Remove(tmpFile)
 
 	// First session: write vectors
-	s1, err := NewStorage(tmpFile)
+	s1, err := NewStorage(tmpFile, 0)
 	if err != nil {
 		t.Fatalf("NewStorage failed: %v", err)
 	}
@@ -367,7 +367,7 @@ func TestIndexPersistence(t *testing.T) {
 	s1.Close()
 
 	// Second session: open and verify index was loaded
-	s2, err := NewStorage(tmpFile)
+	s2, err := NewStorage(tmpFile, 0)
 	if err != nil {
 		t.Fatalf("NewStorage failed: %v", err)
 	}
@@ -399,7 +399,7 @@ func TestCompaction(t *testing.T) {
 	tmpFile := createTempFile(t)
 	defer os.Remove(tmpFile)
 
-	s, err := NewStorage(tmpFile)
+	s, err := NewStorage(tmpFile, 0)
 	if err != nil {
 		t.Fatalf("NewStorage failed: %v", err)
 	}
@@ -460,7 +460,7 @@ func TestCompaction(t *testing.T) {
 	s.Close()
 
 	// Reopen and verify compaction worked
-	s2, err := NewStorage(tmpFile)
+	s2, err := NewStorage(tmpFile, 0)
 	if err != nil {
 		t.Fatalf("NewStorage failed: %v", err)
 	}
@@ -497,7 +497,7 @@ func TestSync(t *testing.T) {
 	tmpFile := createTempFile(t)
 	defer os.Remove(tmpFile)
 
-	s, err := NewStorage(tmpFile)
+	s, err := NewStorage(tmpFile, 0)
 	if err != nil {
 		t.Fatalf("NewStorage failed: %v", err)
 	}
@@ -522,7 +522,7 @@ func TestOpen_EmptyFile(t *testing.T) {
 	tmpFile := createTempFile(t)
 	defer os.Remove(tmpFile)
 
-	s, err := NewStorage(tmpFile)
+	s, err := NewStorage(tmpFile, 0)
 	if err != nil {
 		t.Fatalf("NewStorage failed: %v", err)
 	}
@@ -542,7 +542,7 @@ func TestWriteVector_WithoutOpen(t *testing.T) {
 	tmpFile := createTempFile(t)
 	defer os.Remove(tmpFile)
 
-	s, err := NewStorage(tmpFile)
+	s, err := NewStorage(tmpFile, 0)
 	if err != nil {
 		t.Fatalf("NewStorage failed: %v", err)
 	}
@@ -558,7 +558,7 @@ func TestReadVector_WithoutOpen(t *testing.T) {
 	tmpFile := createTempFile(t)
 	defer os.Remove(tmpFile)
 
-	s, err := NewStorage(tmpFile)
+	s, err := NewStorage(tmpFile, 0)
 	if err != nil {
 		t.Fatalf("NewStorage failed: %v", err)
 	}
@@ -574,7 +574,7 @@ func TestClear(t *testing.T) {
 	tmpFile := createTempFile(t)
 	defer os.Remove(tmpFile)
 
-	s, err := NewStorage(tmpFile)
+	s, err := NewStorage(tmpFile, 0)
 	if err != nil {
 		t.Fatalf("NewStorage failed: %v", err)
 	}
