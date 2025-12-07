@@ -55,9 +55,19 @@ VecLite/
 - **Multiple Index Types**: Support for Flat and HNSW indexes (IVF planned)
 - **Vector Operations**: L2 distance, cosine distance, dot product, normalization
 - **Persistent Storage**: On-disk storage with efficient ID-to-offset indexing and LRU cache
-- **Thread-Safe**: Concurrent read/write operations with RWMutex
+- **Thread-Safe**: Concurrent read operations with exclusive write locking
 - **Memory Efficient**: Vectors stored on disk, only graph structure in memory (HNSW)
 - **Embedded**: Single binary, minimal external dependencies
+
+## Concurrency Model
+
+VecLite uses a **read-write lock (RWMutex)** for thread safety:
+
+- **Multiple Concurrent Reads**: `Search()`, `Get()`, and `Size()` can run simultaneously across goroutines
+- **Single Writer**: `Insert()`, `Delete()`, and `Close()` are exclusive - only one write operation at a time
+- **No Concurrent Read+Write**: Write operations block all reads until completion
+
+**Example**: Multiple `Search()` calls can run concurrently, but `Insert()` blocks all reads and other writes. Optimized for **read-heavy workloads** with occasional writes.
 
 ## Quick Start
 
