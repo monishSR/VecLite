@@ -35,6 +35,7 @@ build/
 
 # Database files
 *.db
+*.db.graph
 *.veclite
 
 # Test coverage

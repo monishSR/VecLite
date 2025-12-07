@@ -21,7 +21,7 @@ clean:
 
 # Run example
 example:
-	go run ./cmd/example/main.go
+	go run ./examples/basic/main.go
 
 # Format code
 fmt:

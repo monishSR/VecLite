@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/monishSR/veclite/internal/index"
+	"github.com/monishSR/veclite/internal/index/hnsw"
 	"github.com/monishSR/veclite/internal/storage"
 )
 
@@ -99,6 +100,16 @@ func Open(dataPath string) (*VecLite, error) {
 func (v *VecLite) Close() error {
 	v.mu.Lock() // Exclusive lock - wait for all operations to complete
 	defer v.mu.Unlock()
+
+	// Save HNSW graph if using HNSW index
+	if v.index != nil && v.config.IndexType == "hnsw" {
+		if hnswIndex, ok := v.index.(*hnsw.HNSWIndex); ok {
+			if err := hnswIndex.SaveGraph(); err != nil {
+				// Log error but continue with storage close
+				fmt.Printf("Warning: failed to save HNSW graph: %v\n", err)
+			}
+		}
+	}
 
 	if v.storage != nil {
 		if err := v.storage.Sync(); err != nil {

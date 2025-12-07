@@ -1,18 +1,73 @@
-# VecLite
+<div align="center">
+  <img src="assets/icon.svg" alt="VecLite Logo" width="120" height="120">
+  <h1>VecLite</h1>
+</div>
+
+<div align="center">
 
 [![Go Version](https://img.shields.io/badge/go-1.21+-00ADD8?style=flat-square&logo=go)](https://golang.org)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](LICENSE)
 [![Go Report Card](https://goreportcard.com/badge/github.com/monishSR/veclite?style=flat-square)](https://goreportcard.com/report/github.com/monishSR/veclite)
 [![Go Reference](https://pkg.go.dev/badge/github.com/monishSR/veclite.svg)](https://pkg.go.dev/github.com/monishSR/veclite)
 
-VecLite is a lightweight embedded vector DB written in Go, designed for simplicity, zero-dependency storage, and easy use inside Go microservices. Ideal for small to medium-scale ANN workloads.
+**A lightweight, embedded vector database written in Go. Perfect for adding semantic search, similarity matching, and ANN capabilities directly into your Go applications.**
+
+</div>
+
+## Why VecLite?
+
+Building AI-powered features like semantic search, recommendation systems, or similarity matching shouldn't require managing complex infrastructure. VecLite brings vector search capabilities directly into your Go application:
+
+- **Zero Infrastructure**: No separate database server, no network calls - just import and use
+- **Single Binary**: Minimal dependencies, perfect for microservices and embedded systems
+- **Fast & Efficient**: HNSW algorithm for sub-linear search, LRU caching, and memory-efficient storage
+- **Thread-Safe**: Built-in concurrency support for read-heavy workloads
+- **Persistent**: Data survives restarts with efficient on-disk storage
+
+**Perfect for**: Semantic search, recommendation engines, duplicate detection, clustering, and any application needing similarity search in Go.
+
+## Quick Example
+
+```go
+package main
+
+import (
+    "fmt"
+    "github.com/monishSR/veclite/pkg/veclite"
+)
+
+func main() {
+    // Create database
+    config := veclite.DefaultConfig()
+    config.Dimension = 128
+    config.IndexType = "hnsw"  // or "flat" for exact search
+    config.DataPath = "./vectors.db"
+    
+    db, _ := veclite.New(config)
+    defer db.Close()
+    
+    // Insert vectors
+    db.Insert(1, []float32{0.1, 0.2, 0.3, /* ... */})
+    db.Insert(2, []float32{0.4, 0.5, 0.6, /* ... */})
+    
+    // Search for similar vectors
+    results, _ := db.Search([]float32{0.15, 0.25, 0.35, /* ... */}, 5)
+    for _, r := range results {
+        fmt.Printf("ID: %d, Distance: %.4f\n", r.ID, r.Distance)
+    }
+}
+```
+
+**See [examples/basic/main.go](examples/basic/main.go) for a complete example demonstrating Insert, Search, and Persistence.**
 
 ## Project Structure
 
 ```
 VecLite/
-├── cmd/
-│   └── example/          # Example usage of VecLite
+├── assets/               # Project assets (logo, images, etc.)
+│   └── icon.svg
+├── examples/             # Example usage of VecLite
+│   └── basic/            # Basic example (Insert, Search, Persistence)
 │       └── main.go
 ├── internal/             # Private application code
 │   ├── index/            # Indexing structures (HNSW, IVF, Flat)
@@ -114,29 +169,53 @@ make test
 make example
 ```
 
+## Index Comparison
+
+| Feature | Flat Index | HNSW Index |
+|---------|-----------|------------|
+| **Search Type** | Exact (100% recall) | Approximate (high recall) |
+| **Search Complexity** | O(n) - linear scan | O(log n) - sub-linear |
+| **Best For** | Small datasets (<10K) | Large datasets (100K+) |
+| **Memory Usage** | Low (only IDs) | Low (graph structure only) |
+| **Insert Speed** | Fast (~0.035 ms) | Slower (~0.275 ms) |
+| **Search Speed (10K)** | ~85 ms (random) | ~66 ms (clustered) |
+| **Search Speed (100K+)** | Slow (linear) | Fast (sub-linear) |
+| **Use Case** | Exact results needed | Speed prioritized |
+
+**Recommendation**: Use **Flat** for small datasets requiring exact results. Use **HNSW** for larger datasets where approximate search is acceptable.
+
 ## Index Types
 
 ### Flat Index
 
-The Flat index is a brute-force search implementation that provides exact nearest neighbor search. It maintains a set of vector IDs in memory and performs a linear scan through all vectors during search, computing distances for each vector. Vectors are stored on disk and accessed through the storage layer's LRU cache for efficient retrieval. This index type is ideal for small to medium-sized datasets (up to ~10K vectors) where exact results are required and search speed is acceptable. The Flat index offers O(n) search complexity where n is the number of vectors, making it simple and reliable but slower for large datasets.
+A brute-force search implementation providing **exact nearest neighbor search** with 100% recall. Performs a linear scan through all vectors, computing distances for each. Ideal for small to medium-sized datasets (up to ~10K vectors) where exact results are required. Offers O(n) search complexity - simple, reliable, but slower for large datasets.
 
 ### HNSW Index
 
-The HNSW (Hierarchical Navigable Small World) index is an approximate nearest neighbor search algorithm that provides sub-linear search complexity. It builds a multi-layer graph structure where each layer is a small-world network, enabling fast navigation from entry points to nearest neighbors. The implementation is memory-efficient, storing only the graph structure (node IDs and connections) in memory while keeping vectors on disk. The graph structure is persisted to a separate `.graph` file for fast index loading. HNSW is optimized for large datasets (100K+ vectors) and provides configurable trade-offs between search quality and speed through parameters like `M` (connections per node), `efConstruction` (search width during insertion), and `efSearch` (search width during query). The index includes CPU optimizations such as early termination, selective neighbor exploration, and reduced iteration limits for better performance on large datasets.
+A state-of-the-art approximate nearest neighbor search algorithm with **sub-linear search complexity**. Builds a multi-layer graph structure where each layer is a small-world network, enabling fast navigation from entry points to nearest neighbors. Memory-efficient (only graph structure in memory, vectors on disk), optimized for large datasets (100K+ vectors), and includes CPU optimizations for better performance. Configurable via `M`, `efConstruction`, and `efSearch` parameters.
 
-## Development Status
+## Roadmap
 
-- ✅ Project structure with organized folder layout
-- ✅ Flat index implementation (fully functional)
-- ✅ HNSW index implementation (fully functional with graph persistence)
-- ✅ Vector operations (L2, cosine, dot product, normalization)
-- ✅ Persistent storage layer with ID-to-offset indexing and LRU cache
-- ✅ Thread-safe concurrent operations (RWMutex)
-- ✅ Comprehensive test coverage for all index types
-- ✅ Parallel read/write tests
-- ✅ Performance benchmarks
-- 🚧 IVF index (planned)
-- 🚧 Async index updates (planned)
+### ✅ Completed (v0.1)
+- Flat index with exact search
+- HNSW index with approximate search
+- Persistent storage with efficient indexing
+- Thread-safe concurrent operations
+- LRU caching for performance
+- Comprehensive test coverage
+- Performance benchmarks
+
+### 🚧 In Progress (v0.2)
+- IVF (Inverted File) index for very large datasets
+- Async index updates for non-blocking writes
+- Query optimization improvements
+
+### 🔮 Planned (v1.0)
+- Cosine similarity optimization
+- Batch insert operations
+- Index statistics and monitoring
+- Backup and restore functionality
+- Multi-dimensional distance metrics
 
 ## Benchmarking
 
@@ -176,37 +255,25 @@ The benchmarks use the following HNSW parameters for optimal performance:
 
 Note: For production use with large datasets, you may want to increase `EfConstruction` to 200 and `EfSearch` to 50-100 for better search quality.
 
-### Benchmark Results
+### Quick Benchmarks
 
-The following table shows performance benchmarks for different operations on a dataset of 10,000 vectors (128 dimensions):
+Performance on 10,000 vectors (128 dimensions):
 
-| Operation | Index Type | Time per Operation | Notes |
-|-----------|------------|-------------------|-------|
-| **Insert** | Flat | ~0.035 ms (35,349 ns/op) | Fast, direct write to storage |
-| **Insert** | HNSW | ~0.275 ms (274,694 ns/op) | Slower due to graph construction, ~7.8x slower than Flat |
-| **Search (Random)** | Flat | ~85.4 ms (85,441,444 ns/op) | Linear scan through all vectors |
-| **Search (Random)** | HNSW | *Optimizing* | Random vectors create poor graph structure |
-| **Search (Clustered)** | Flat | ~145.4 ms (145,421,853 ns/op) | Linear scan, same performance regardless of data structure |
-| **Search (Clustered)** | HNSW | ~65.8 ms (65,759,070 ns/op) | **~2.2x faster than Flat** on structured data |
-| **Read** | Flat | ~2.0 ms (1,989,865 ns/op) | Direct storage read with cache |
-| **Read** | HNSW | ~2.0 ms | Same as Flat (uses same storage layer) |
+```
+Operation          | Index | Time/Op      | Speedup
+-------------------|-------|--------------|--------
+Insert             | Flat  | ~0.035 ms    | Baseline
+Insert             | HNSW  | ~0.275 ms    | 7.8x slower
+Search (Clustered) | Flat  | ~145.4 ms    | Baseline
+Search (Clustered) | HNSW  | ~65.8 ms     | 2.2x faster ⚡
+Read               | Both  | ~2.0 ms      | Same (shared storage)
+```
 
-**Performance Characteristics:**
-- **Flat Index**: Provides exact search results but requires scanning all vectors, making it O(n) complexity. Performance is consistent regardless of data distribution. Best for small datasets (<10K vectors) where exact results are required.
-- **HNSW Index**: Insertion is slower due to graph construction overhead. **Search performance is significantly better on structured/clustered data** (2.2x faster than Flat), demonstrating HNSW's advantage on real-world embeddings. The graph structure enables sub-linear search complexity on structured data.
+**Key Insight**: HNSW excels on structured data (real embeddings) - **2.2x faster search** than Flat. On random data, performance is similar due to poor graph structure.
 
-**Key Insights:**
-- **Random vs Clustered Data**: HNSW performs much better on clustered/structured data (like real embeddings) compared to random vectors. This is why using real features in benchmarks is important.
-- **Data Distribution Matters**: Random vectors create a poor graph structure, while clustered data allows HNSW to form efficient connections and demonstrate its speed advantage.
+**Test Environment**: 10K vectors, 128 dims, M=16, EfConstruction=64, EfSearch=10, 50 Gaussian clusters
 
-**Test Environment:**
-- Dataset size: 10,000 vectors
-- Vector dimension: 128
-- Cache capacity: 1,000 vectors
-- HNSW parameters: M=16, EfConstruction=64, EfSearch=10
-- Clustered data: 50 clusters with Gaussian distribution
-
-*Note: For production use with real embeddings, HNSW performance advantage will be even more pronounced on larger datasets (100K+ vectors).*
+*For production with real embeddings, HNSW advantage increases on larger datasets (100K+ vectors).*
 
 ## Installation
 

@@ -2,6 +2,7 @@ package index
 
 import (
 	"errors"
+	"os"
 
 	"github.com/monishSR/veclite/internal/index/flat"
 	"github.com/monishSR/veclite/internal/index/hnsw"
@@ -39,12 +40,27 @@ const (
 )
 
 // NewIndex creates a new index based on the index type
+// If an existing index is found (e.g., graph file for HNSW), it will be opened instead
 // storage can be nil for indexes that don't need it (e.g., memory-only FlatIndex)
 func NewIndex(indexType IndexType, dimension int, config map[string]any, storage *storage.Storage) (Index, error) {
 	switch indexType {
 	case IndexTypeHNSW:
+		// Check if graph file exists - if so, open existing index
+		if storage != nil {
+			graphPath := storage.GetFilePath() + ".graph"
+			if _, err := os.Stat(graphPath); err == nil {
+				// Graph file exists, open existing index
+				return hnsw.OpenHNSWIndex(storage)
+			}
+		}
+		// No existing graph file, create new index
 		return hnsw.NewHNSWIndex(dimension, config, storage)
 	case IndexTypeFlat:
+		// For Flat index, check if storage file exists and has data
+		if storage != nil {
+			// Try to open existing flat index
+			return flat.OpenFlatIndex(dimension, storage)
+		}
 		return flat.NewFlatIndex(dimension, storage), nil
 	case IndexTypeIVF:
 		return ivf.NewIVFIndex(dimension, config, storage)
