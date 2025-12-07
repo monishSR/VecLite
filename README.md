@@ -1,5 +1,5 @@
 <div style="text-align: left;">
-  <img src="assets/icon.svg" alt="VecLite Logo" width="900" height="270" style="display: block; margin: 0;">
+  <img src="assets/icon.svg" alt="VecLite Logo" width="900" height="214" style="display: block; margin: 0;">
 </div>
 
 [![Go Version](https://img.shields.io/badge/go-1.21+-00ADD8?style=flat-square&logo=go)](https://golang.org)
