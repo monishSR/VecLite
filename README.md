@@ -1,6 +1,11 @@
 # VecLite
 
-An embedded Vector DB written entirely in golang.
+[![Go Version](https://img.shields.io/badge/go-1.21+-00ADD8?style=flat-square&logo=go)](https://golang.org)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](LICENSE)
+[![Go Report Card](https://goreportcard.com/badge/github.com/monishSR/veclite?style=flat-square)](https://goreportcard.com/report/github.com/monishSR/veclite)
+[![Go Reference](https://pkg.go.dev/badge/github.com/monishSR/veclite.svg)](https://pkg.go.dev/github.com/monishSR/veclite)
+
+VecLite is a lightweight embedded vector DB written in Go, designed for simplicity, zero-dependency storage, and easy use inside Go microservices. Ideal for small to medium-scale ANN workloads.
 
 ## Project Structure
 
@@ -60,7 +65,7 @@ VecLite/
 package main
 
 import (
-    "github.com/msr23/veclite/pkg/veclite"
+    "github.com/monishSR/veclite/pkg/veclite"
 )
 
 func main() {
@@ -192,6 +197,21 @@ The following table shows performance benchmarks for different operations on a d
 - Clustered data: 50 clusters with Gaussian distribution
 
 *Note: For production use with real embeddings, HNSW performance advantage will be even more pronounced on larger datasets (100K+ vectors).*
+
+## Installation
+
+```bash
+go get github.com/monishSR/veclite
+```
+
+## Package Distribution
+
+To use VecLite in your project:
+```go
+import "github.com/monishSR/veclite/pkg/veclite"
+```
+
+Then run `go mod tidy` to download dependencies.
 
 ## License
 

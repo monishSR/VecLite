@@ -3,8 +3,8 @@ package ivf
 import (
 	"errors"
 
-	"github.com/msr23/veclite/internal/index/types"
-	"github.com/msr23/veclite/internal/storage"
+	"github.com/monishSR/veclite/internal/index/types"
+	"github.com/monishSR/veclite/internal/storage"
 )
 
 // IVFIndex implements Inverted File index
@@ -77,4 +77,3 @@ func (i *IVFIndex) Clear() error {
 	// TODO: Implement
 	return nil
 }
-

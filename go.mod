@@ -1,4 +1,4 @@
-module github.com/msr23/veclite
+module github.com/monishSR/veclite
 
 go 1.21
 

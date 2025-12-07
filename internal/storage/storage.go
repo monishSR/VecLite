@@ -700,7 +700,7 @@ func (s *Storage) ReadAllVectors() (map[uint64][]float32, error) {
 	return vectors, nil
 }
 
-// DeleteVector marks a vector as deleted using a tombstone (ID = 0)
+// DeleteVector marks a vector as deleted using a tombstone (ID = ^uint64(0), all bits set)
 // This is much more efficient than rewriting the entire file
 func (s *Storage) DeleteVector(id uint64) error {
 	s.mu.Lock()
@@ -745,7 +745,7 @@ func (s *Storage) DeleteVector(id uint64) error {
 		return err
 	}
 
-	// Write tombstone: ID = 0 (marks as deleted)
+	// Write tombstone: ID = ^uint64(0) (all bits set, marks as deleted)
 	if err := binary.Write(s.file, binary.LittleEndian, deletedID); err != nil {
 		return err
 	}

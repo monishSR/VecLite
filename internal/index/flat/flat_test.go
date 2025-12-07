@@ -4,8 +4,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/msr23/veclite/internal/index/types"
-	"github.com/msr23/veclite/internal/storage"
+	"github.com/monishSR/veclite/internal/index/types"
+	"github.com/monishSR/veclite/internal/storage"
 )
 
 func TestFlatIndex_Insert(t *testing.T) {
@@ -571,4 +571,3 @@ func createTempFile(t *testing.T) string {
 	tmpFile.Close()
 	return tmpFile.Name()
 }
-

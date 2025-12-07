@@ -7,7 +7,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/msr23/veclite/internal/storage"
+	"github.com/monishSR/veclite/internal/storage"
 )
 
 // SaveGraph saves the HNSW graph structure to disk
@@ -259,4 +259,3 @@ func OpenHNSWIndex(storage *storage.Storage) (*HNSWIndex, error) {
 
 	return h, nil
 }
-

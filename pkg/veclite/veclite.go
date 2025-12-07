@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/msr23/veclite/internal/index"
-	"github.com/msr23/veclite/internal/storage"
+	"github.com/monishSR/veclite/internal/index"
+	"github.com/monishSR/veclite/internal/storage"
 )
 
 // VecLite represents the main embedded vector database instance
@@ -68,6 +68,8 @@ func New(config *Config) (*VecLite, error) {
 	indexConfig := make(map[string]any)
 	indexConfig["M"] = config.M
 	indexConfig["MaxElements"] = config.MaxElements
+	indexConfig["EfConstruction"] = config.EfConstruction
+	indexConfig["EfSearch"] = config.EfSearch
 
 	// Pass storage to index (indexes can use it or ignore it)
 	idx, err := index.NewIndex(index.IndexType(config.IndexType), config.Dimension, indexConfig, store)

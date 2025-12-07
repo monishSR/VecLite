@@ -6,10 +6,10 @@ import (
 	"math"
 	"math/rand"
 
-	"github.com/msr23/veclite/internal/index/types"
-	"github.com/msr23/veclite/internal/index/utils"
-	"github.com/msr23/veclite/internal/storage"
-	"github.com/msr23/veclite/internal/vector"
+	"github.com/monishSR/veclite/internal/index/types"
+	"github.com/monishSR/veclite/internal/index/utils"
+	"github.com/monishSR/veclite/internal/storage"
+	"github.com/monishSR/veclite/internal/vector"
 )
 
 // HNSWNode represents a node in the HNSW graph

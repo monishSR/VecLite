@@ -3,11 +3,11 @@ package index
 import (
 	"errors"
 
-	"github.com/msr23/veclite/internal/index/flat"
-	"github.com/msr23/veclite/internal/index/hnsw"
-	"github.com/msr23/veclite/internal/index/ivf"
-	"github.com/msr23/veclite/internal/index/types"
-	"github.com/msr23/veclite/internal/storage"
+	"github.com/monishSR/veclite/internal/index/flat"
+	"github.com/monishSR/veclite/internal/index/hnsw"
+	"github.com/monishSR/veclite/internal/index/ivf"
+	"github.com/monishSR/veclite/internal/index/types"
+	"github.com/monishSR/veclite/internal/storage"
 )
 
 // Index is the interface for vector indexing structures

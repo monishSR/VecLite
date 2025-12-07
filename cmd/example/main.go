@@ -5,7 +5,7 @@ import (
 	"log"
 	"math/rand"
 
-	"github.com/msr23/veclite/pkg/veclite"
+	"github.com/monishSR/veclite/pkg/veclite"
 )
 
 func main() {
