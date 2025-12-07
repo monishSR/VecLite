@@ -1,9 +1,6 @@
-<div align="center">
-  <img src="assets/icon.svg" alt="VecLite Logo" width="120" height="120">
-  <h1>VecLite</h1>
+<div style="text-align: left;">
+  <img src="assets/icon.svg" alt="VecLite Logo" width="900" height="270" style="display: block; margin: 0;">
 </div>
-
-<div align="center">
 
 [![Go Version](https://img.shields.io/badge/go-1.21+-00ADD8?style=flat-square&logo=go)](https://golang.org)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](LICENSE)
@@ -11,8 +8,6 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/monishSR/veclite.svg)](https://pkg.go.dev/github.com/monishSR/veclite)
 
 **A lightweight, embedded vector database written in Go. Perfect for adding semantic search, similarity matching, and ANN capabilities directly into your Go applications.**
-
-</div>
 
 ## Why VecLite?
 
