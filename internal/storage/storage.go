@@ -21,7 +21,7 @@ type Storage struct {
 	mu          sync.RWMutex // Protects file I/O and index map
 	filePath    string
 	file        *os.File
-	dimension   int                          // Vector dimension (stored in index metadata, not per-record)
+	dimension   int                           // Vector dimension (stored in index metadata)
 	index       map[uint64]int64              // Index: ID -> file offset for fast lookups
 	vectorCache *lru.Cache[uint64, []float32] // LRU cache for vectors
 }
