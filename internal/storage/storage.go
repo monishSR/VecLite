@@ -21,13 +21,19 @@ type Storage struct {
 	mu          sync.RWMutex // Protects file I/O and index map
 	filePath    string
 	file        *os.File
+	dimension   int                          // Vector dimension (stored in index metadata, not per-record)
 	index       map[uint64]int64              // Index: ID -> file offset for fast lookups
 	vectorCache *lru.Cache[uint64, []float32] // LRU cache for vectors
 }
 
 // NewStorage creates a new storage instance
+// dimension: vector dimension (must be > 0)
 // cacheCapacity: 0 = disabled, >0 = cache size (default: 1000 if < 0)
-func NewStorage(filePath string, cacheCapacity int) (*Storage, error) {
+func NewStorage(filePath string, dimension int, cacheCapacity int) (*Storage, error) {
+	if dimension <= 0 {
+		return nil, errors.New("dimension must be greater than 0")
+	}
+
 	// Default cache capacity if negative
 	if cacheCapacity < 0 {
 		cacheCapacity = 1000
@@ -44,6 +50,7 @@ func NewStorage(filePath string, cacheCapacity int) (*Storage, error) {
 
 	return &Storage{
 		filePath:    filePath,
+		dimension:   dimension,
 		index:       make(map[uint64]int64),
 		vectorCache: cache,
 	}, nil
@@ -113,10 +120,24 @@ func (s *Storage) loadIndex() error {
 		return err
 	}
 
+	// Read dimension (4 bytes before count)
+	if _, err := s.file.Seek(-12, io.SeekEnd); err != nil {
+		return err
+	}
+
+	var dim uint32
+	if err := binary.Read(s.file, binary.LittleEndian, &dim); err != nil {
+		return err
+	}
+
+	// Store dimension
+	s.dimension = int(dim)
+
 	// Calculate index start position
 	// Each entry: 8 bytes (ID) + 8 bytes (offset) = 16 bytes
+	// Metadata: 4 bytes (dimension) + 4 bytes (count) + 4 bytes (marker) = 12 bytes
 	indexSize := int64(count * 16)
-	indexStart := fileSize - 8 - indexSize // 8 bytes for count + marker
+	indexStart := fileSize - 12 - indexSize // 12 bytes for dimension + count + marker
 
 	if indexStart < 0 {
 		return errors.New("invalid index size")
@@ -167,8 +188,9 @@ func (s *Storage) saveIndex() error {
 				if _, err := s.file.Seek(-8, io.SeekEnd); err == nil {
 					var count uint32
 					if err := binary.Read(s.file, binary.LittleEndian, &count); err == nil {
+						// New format: dimension + count + marker = 12 bytes
 						indexSize := int64(count * 16)
-						indexStart := fileSize - 8 - indexSize
+						indexStart := fileSize - 12 - indexSize
 						if indexStart > 0 {
 							if err := s.file.Truncate(indexStart); err != nil {
 								return err
@@ -196,7 +218,10 @@ func (s *Storage) saveIndex() error {
 		}
 	}
 
-	// Write count and marker
+	// Write metadata: dimension, count, and marker
+	if err := binary.Write(s.file, binary.LittleEndian, uint32(s.dimension)); err != nil {
+		return err
+	}
 	if err := binary.Write(s.file, binary.LittleEndian, count); err != nil {
 		return err
 	}
@@ -240,10 +265,18 @@ func (s *Storage) rebuildIndex() error {
 				if _, err := s.file.Seek(-8, io.SeekEnd); err == nil {
 					var count uint32
 					if err := binary.Read(s.file, binary.LittleEndian, &count); err == nil {
-						indexSize := int64(count * 16)     // Each entry: 8 bytes ID + 8 bytes offset
-						dataEnd = fileSize - 8 - indexSize // 8 bytes for count + marker
-						if dataEnd < 0 {
-							dataEnd = 0
+						// Read dimension (4 bytes before count)
+						if _, err := s.file.Seek(-12, io.SeekEnd); err == nil {
+							var dim uint32
+							if err := binary.Read(s.file, binary.LittleEndian, &dim); err == nil {
+								// New format: dimension + count + marker = 12 bytes
+								s.dimension = int(dim)
+								indexSize := int64(count * 16)
+								dataEnd = fileSize - 12 - indexSize
+								if dataEnd < 0 {
+									dataEnd = 0
+								}
+							}
 						}
 					}
 				}
@@ -257,6 +290,7 @@ func (s *Storage) rebuildIndex() error {
 	}
 
 	// Scan through file and build index (stop at dataEnd)
+	// New format: records don't have dimension field, use dimension from metadata
 	for {
 		// Get current offset (where this vector starts)
 		offset, err := s.file.Seek(0, io.SeekCurrent)
@@ -278,17 +312,8 @@ func (s *Storage) rebuildIndex() error {
 			return err
 		}
 
-		// Read dimension
-		var dim uint32
-		if err := binary.Read(s.file, binary.LittleEndian, &dim); err != nil {
-			if err == io.EOF {
-				break
-			}
-			return err
-		}
-
-		// Skip vector data (we just need to index it)
-		vectorSize := int64(dim * 4) // float32 is 4 bytes
+		// Skip vector data (dimension is in metadata, not per-record)
+		vectorSize := int64(s.dimension * 4) // float32 is 4 bytes
 		if _, err := s.file.Seek(vectorSize, io.SeekCurrent); err != nil {
 			if err == io.EOF {
 				break
@@ -367,15 +392,8 @@ func (s *Storage) compact() error {
 			break
 		}
 
-		var dim uint32
-		if err := binary.Read(s.file, binary.LittleEndian, &dim); err != nil {
-			if err == io.EOF {
-				break
-			}
-			return err
-		}
-
-		vector := make([]float32, dim)
+		// New format: read vector data directly (dimension from metadata)
+		vector := make([]float32, s.dimension)
 		if err := binary.Read(s.file, binary.LittleEndian, &vector); err != nil {
 			if err == io.EOF {
 				break
@@ -433,13 +451,7 @@ func (s *Storage) compact() error {
 			return fmt.Errorf("failed to rewrite vector %d: %w", vecID, err)
 		}
 
-		// Write dimension (4 bytes)
-		dim := uint32(len(vector))
-		if err := binary.Write(s.file, binary.LittleEndian, dim); err != nil {
-			return fmt.Errorf("failed to rewrite vector %d: %w", vecID, err)
-		}
-
-		// Write vector data
+		// Write vector data (dimension is stored in index metadata, not per-record)
 		if err := binary.Write(s.file, binary.LittleEndian, vector); err != nil {
 			return fmt.Errorf("failed to rewrite vector %d: %w", vecID, err)
 		}
@@ -498,18 +510,17 @@ func (s *Storage) WriteVector(id uint64, vector []float32) error {
 		return err
 	}
 
+	// Validate dimension
+	if len(vector) != s.dimension {
+		return fmt.Errorf("vector dimension mismatch: expected %d, got %d", s.dimension, len(vector))
+	}
+
 	// Write ID (8 bytes)
 	if err := binary.Write(s.file, binary.LittleEndian, id); err != nil {
 		return err
 	}
 
-	// Write dimension (4 bytes)
-	dim := uint32(len(vector))
-	if err := binary.Write(s.file, binary.LittleEndian, dim); err != nil {
-		return err
-	}
-
-	// Write vector data
+	// Write vector data (dimension is stored in index metadata, not per-record)
 	if err := binary.Write(s.file, binary.LittleEndian, vector); err != nil {
 		return err
 	}
@@ -580,14 +591,8 @@ func (s *Storage) ReadVector(id uint64) ([]float32, error) {
 		return nil, fmt.Errorf("vector ID mismatch at offset %d: expected %d, got %d", offset, id, vecID)
 	}
 
-	// Read dimension
-	var dim uint32
-	if err := binary.Read(s.file, binary.LittleEndian, &dim); err != nil {
-		return nil, err
-	}
-
-	// Read vector data
-	vector := make([]float32, dim)
+	// New format: read vector data directly (dimension from metadata)
+	vector := make([]float32, s.dimension)
 	if err := binary.Read(s.file, binary.LittleEndian, &vector); err != nil {
 		return nil, err
 	}
@@ -633,10 +638,18 @@ func (s *Storage) ReadAllVectors() (map[uint64][]float32, error) {
 				if _, err := s.file.Seek(-8, io.SeekEnd); err == nil {
 					var count uint32
 					if err := binary.Read(s.file, binary.LittleEndian, &count); err == nil {
-						indexSize := int64(count * 16)     // Each entry: 8 bytes ID + 8 bytes offset
-						dataEnd = fileSize - 8 - indexSize // 8 bytes for count + marker
-						if dataEnd < 0 {
-							dataEnd = 0
+						// Read dimension (4 bytes before count)
+						if _, err := s.file.Seek(-12, io.SeekEnd); err == nil {
+							var dim uint32
+							if err := binary.Read(s.file, binary.LittleEndian, &dim); err == nil {
+								// New format: dimension + count + marker = 12 bytes
+								s.dimension = int(dim)
+								indexSize := int64(count * 16)
+								dataEnd = fileSize - 12 - indexSize
+								if dataEnd < 0 {
+									dataEnd = 0
+								}
+							}
 						}
 					}
 				}
@@ -675,15 +688,8 @@ func (s *Storage) ReadAllVectors() (map[uint64][]float32, error) {
 			break
 		}
 
-		var dim uint32
-		if err := binary.Read(s.file, binary.LittleEndian, &dim); err != nil {
-			if err == io.EOF {
-				break
-			}
-			return nil, err
-		}
-
-		vector := make([]float32, dim)
+		// New format: read vector data directly (dimension from metadata)
+		vector := make([]float32, s.dimension)
 		if err := binary.Read(s.file, binary.LittleEndian, &vector); err != nil {
 			if err == io.EOF {
 				break
@@ -726,7 +732,7 @@ func (s *Storage) DeleteVector(id uint64) error {
 		return err
 	}
 
-	// Read the vector to get its dimension (we need to know how much to skip)
+	// Read the vector ID to verify
 	var vecID uint64
 	if err := binary.Read(s.file, binary.LittleEndian, &vecID); err != nil {
 		return err
@@ -735,10 +741,7 @@ func (s *Storage) DeleteVector(id uint64) error {
 		return fmt.Errorf("vector ID mismatch at offset %d: expected %d, got %d", offset, id, vecID)
 	}
 
-	var dim uint32
-	if err := binary.Read(s.file, binary.LittleEndian, &dim); err != nil {
-		return err
-	}
+	// Dimension is not needed for deletion - we just mark the ID as deleted
 
 	// Seek back to the start of this vector
 	if _, err := s.file.Seek(offset, 0); err != nil {

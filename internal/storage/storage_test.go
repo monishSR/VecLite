@@ -6,7 +6,7 @@ import (
 )
 
 func TestNewStorage(t *testing.T) {
-	s, err := NewStorage("test.db", 0)
+	s, err := NewStorage("test.db", 4, 0)
 	if err != nil {
 		t.Fatalf("NewStorage failed: %v", err)
 	}
@@ -25,7 +25,7 @@ func TestOpen_NewFile(t *testing.T) {
 	tmpFile := createTempFile(t)
 	defer os.Remove(tmpFile)
 
-	s, err := NewStorage(tmpFile, 0)
+	s, err := NewStorage(tmpFile, 4, 0)
 	if err != nil {
 		t.Fatalf("NewStorage failed: %v", err)
 	}
@@ -46,7 +46,7 @@ func TestWriteVector_ReadVector(t *testing.T) {
 	tmpFile := createTempFile(t)
 	defer os.Remove(tmpFile)
 
-	s, err := NewStorage(tmpFile, 0)
+	s, err := NewStorage(tmpFile, 4, 0)
 	if err != nil {
 		t.Fatalf("NewStorage failed: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestWriteVector_Multiple(t *testing.T) {
 	tmpFile := createTempFile(t)
 	defer os.Remove(tmpFile)
 
-	s, err := NewStorage(tmpFile, 0)
+	s, err := NewStorage(tmpFile, 4, 0)
 	if err != nil {
 		t.Fatalf("NewStorage failed: %v", err)
 	}
@@ -106,9 +106,9 @@ func TestWriteVector_Multiple(t *testing.T) {
 
 	// Write multiple vectors
 	vectors := map[uint64][]float32{
-		1: {1.0, 2.0, 3.0},
-		2: {4.0, 5.0, 6.0},
-		3: {7.0, 8.0, 9.0},
+		1: {1.0, 2.0, 3.0, 4.0},
+		2: {4.0, 5.0, 6.0, 7.0},
+		3: {7.0, 8.0, 9.0, 10.0},
 	}
 
 	for id, vec := range vectors {
@@ -145,7 +145,7 @@ func TestReadVector_NotFound(t *testing.T) {
 	tmpFile := createTempFile(t)
 	defer os.Remove(tmpFile)
 
-	s, err := NewStorage(tmpFile, 0)
+	s, err := NewStorage(tmpFile, 4, 0)
 	if err != nil {
 		t.Fatalf("NewStorage failed: %v", err)
 	}
@@ -166,7 +166,7 @@ func TestDeleteVector(t *testing.T) {
 	tmpFile := createTempFile(t)
 	defer os.Remove(tmpFile)
 
-	s, err := NewStorage(tmpFile, 0)
+	s, err := NewStorage(tmpFile, 4, 0)
 	if err != nil {
 		t.Fatalf("NewStorage failed: %v", err)
 	}
@@ -178,7 +178,7 @@ func TestDeleteVector(t *testing.T) {
 
 	// Write a vector
 	id := uint64(1)
-	vector := []float32{1.0, 2.0, 3.0}
+	vector := []float32{1.0, 2.0, 3.0, 4.0}
 
 	if err := s.WriteVector(id, vector); err != nil {
 		t.Fatalf("WriteVector failed: %v", err)
@@ -211,7 +211,7 @@ func TestDeleteVector_NonExistent(t *testing.T) {
 	tmpFile := createTempFile(t)
 	defer os.Remove(tmpFile)
 
-	s, err := NewStorage(tmpFile, 0)
+	s, err := NewStorage(tmpFile, 4, 0)
 	if err != nil {
 		t.Fatalf("NewStorage failed: %v", err)
 	}
@@ -231,7 +231,7 @@ func TestReadAllVectors(t *testing.T) {
 	tmpFile := createTempFile(t)
 	defer os.Remove(tmpFile)
 
-	s, err := NewStorage(tmpFile, 0)
+	s, err := NewStorage(tmpFile, 4, 0)
 	if err != nil {
 		t.Fatalf("NewStorage failed: %v", err)
 	}
@@ -243,9 +243,9 @@ func TestReadAllVectors(t *testing.T) {
 
 	// Write multiple vectors
 	vectors := map[uint64][]float32{
-		1: {1.0, 2.0},
-		2: {3.0, 4.0},
-		3: {5.0, 6.0},
+		1: {1.0, 2.0, 3.0, 4.0},
+		2: {3.0, 4.0, 5.0, 6.0},
+		3: {5.0, 6.0, 7.0, 8.0},
 	}
 
 	for id, vec := range vectors {
@@ -289,7 +289,7 @@ func TestReadAllVectors_SkipsTombstones(t *testing.T) {
 	tmpFile := createTempFile(t)
 	defer os.Remove(tmpFile)
 
-	s, err := NewStorage(tmpFile, 0)
+	s, err := NewStorage(tmpFile, 4, 0)
 	if err != nil {
 		t.Fatalf("NewStorage failed: %v", err)
 	}
@@ -300,13 +300,13 @@ func TestReadAllVectors_SkipsTombstones(t *testing.T) {
 	defer s.Close()
 
 	// Write vectors
-	if err := s.WriteVector(1, []float32{1.0, 2.0}); err != nil {
+	if err := s.WriteVector(1, []float32{1.0, 2.0, 3.0, 4.0}); err != nil {
 		t.Fatalf("WriteVector failed: %v", err)
 	}
-	if err := s.WriteVector(2, []float32{3.0, 4.0}); err != nil {
+	if err := s.WriteVector(2, []float32{3.0, 4.0, 5.0, 6.0}); err != nil {
 		t.Fatalf("WriteVector failed: %v", err)
 	}
-	if err := s.WriteVector(3, []float32{5.0, 6.0}); err != nil {
+	if err := s.WriteVector(3, []float32{5.0, 6.0, 7.0, 8.0}); err != nil {
 		t.Fatalf("WriteVector failed: %v", err)
 	}
 
@@ -343,7 +343,7 @@ func TestIndexPersistence(t *testing.T) {
 	defer os.Remove(tmpFile)
 
 	// First session: write vectors
-	s1, err := NewStorage(tmpFile, 0)
+	s1, err := NewStorage(tmpFile, 4, 0)
 	if err != nil {
 		t.Fatalf("NewStorage failed: %v", err)
 	}
@@ -353,9 +353,9 @@ func TestIndexPersistence(t *testing.T) {
 	}
 
 	vectors := map[uint64][]float32{
-		1: {1.0, 2.0, 3.0},
-		2: {4.0, 5.0, 6.0},
-		3: {7.0, 8.0, 9.0},
+		1: {1.0, 2.0, 3.0, 4.0},
+		2: {4.0, 5.0, 6.0, 7.0},
+		3: {7.0, 8.0, 9.0, 10.0},
 	}
 
 	for id, vec := range vectors {
@@ -367,7 +367,7 @@ func TestIndexPersistence(t *testing.T) {
 	s1.Close()
 
 	// Second session: open and verify index was loaded
-	s2, err := NewStorage(tmpFile, 0)
+	s2, err := NewStorage(tmpFile, 4, 0)
 	if err != nil {
 		t.Fatalf("NewStorage failed: %v", err)
 	}
@@ -399,7 +399,7 @@ func TestCompaction(t *testing.T) {
 	tmpFile := createTempFile(t)
 	defer os.Remove(tmpFile)
 
-	s, err := NewStorage(tmpFile, 0)
+	s, err := NewStorage(tmpFile, 4, 0)
 	if err != nil {
 		t.Fatalf("NewStorage failed: %v", err)
 	}
@@ -409,13 +409,13 @@ func TestCompaction(t *testing.T) {
 	}
 
 	// Write vectors
-	if err := s.WriteVector(1, []float32{1.0, 2.0}); err != nil {
+	if err := s.WriteVector(1, []float32{1.0, 2.0, 3.0, 4.0}); err != nil {
 		t.Fatalf("WriteVector failed: %v", err)
 	}
-	if err := s.WriteVector(2, []float32{3.0, 4.0}); err != nil {
+	if err := s.WriteVector(2, []float32{3.0, 4.0, 5.0, 6.0}); err != nil {
 		t.Fatalf("WriteVector failed: %v", err)
 	}
-	if err := s.WriteVector(3, []float32{5.0, 6.0}); err != nil {
+	if err := s.WriteVector(3, []float32{5.0, 6.0, 7.0, 8.0}); err != nil {
 		t.Fatalf("WriteVector failed: %v", err)
 	}
 
@@ -460,7 +460,7 @@ func TestCompaction(t *testing.T) {
 	s.Close()
 
 	// Reopen and verify compaction worked
-	s2, err := NewStorage(tmpFile, 0)
+	s2, err := NewStorage(tmpFile, 4, 0)
 	if err != nil {
 		t.Fatalf("NewStorage failed: %v", err)
 	}
@@ -497,7 +497,7 @@ func TestSync(t *testing.T) {
 	tmpFile := createTempFile(t)
 	defer os.Remove(tmpFile)
 
-	s, err := NewStorage(tmpFile, 0)
+	s, err := NewStorage(tmpFile, 4, 0)
 	if err != nil {
 		t.Fatalf("NewStorage failed: %v", err)
 	}
@@ -508,7 +508,7 @@ func TestSync(t *testing.T) {
 	defer s.Close()
 
 	// Write a vector
-	if err := s.WriteVector(1, []float32{1.0, 2.0, 3.0}); err != nil {
+	if err := s.WriteVector(1, []float32{1.0, 2.0, 3.0, 4.0}); err != nil {
 		t.Fatalf("WriteVector failed: %v", err)
 	}
 
@@ -522,7 +522,7 @@ func TestOpen_EmptyFile(t *testing.T) {
 	tmpFile := createTempFile(t)
 	defer os.Remove(tmpFile)
 
-	s, err := NewStorage(tmpFile, 0)
+	s, err := NewStorage(tmpFile, 4, 0)
 	if err != nil {
 		t.Fatalf("NewStorage failed: %v", err)
 	}
@@ -542,13 +542,13 @@ func TestWriteVector_WithoutOpen(t *testing.T) {
 	tmpFile := createTempFile(t)
 	defer os.Remove(tmpFile)
 
-	s, err := NewStorage(tmpFile, 0)
+	s, err := NewStorage(tmpFile, 4, 0)
 	if err != nil {
 		t.Fatalf("NewStorage failed: %v", err)
 	}
 
 	// Try to write without opening
-	err = s.WriteVector(1, []float32{1.0, 2.0})
+	err = s.WriteVector(1, []float32{1.0, 2.0, 3.0, 4.0})
 	if err == nil {
 		t.Error("Expected error when writing without opening file")
 	}
@@ -558,7 +558,7 @@ func TestReadVector_WithoutOpen(t *testing.T) {
 	tmpFile := createTempFile(t)
 	defer os.Remove(tmpFile)
 
-	s, err := NewStorage(tmpFile, 0)
+	s, err := NewStorage(tmpFile, 4, 0)
 	if err != nil {
 		t.Fatalf("NewStorage failed: %v", err)
 	}
@@ -574,7 +574,7 @@ func TestClear(t *testing.T) {
 	tmpFile := createTempFile(t)
 	defer os.Remove(tmpFile)
 
-	s, err := NewStorage(tmpFile, 0)
+	s, err := NewStorage(tmpFile, 4, 0)
 	if err != nil {
 		t.Fatalf("NewStorage failed: %v", err)
 	}
@@ -585,13 +585,13 @@ func TestClear(t *testing.T) {
 	defer s.Close()
 
 	// Write some vectors
-	if err := s.WriteVector(1, []float32{1.0, 2.0}); err != nil {
+	if err := s.WriteVector(1, []float32{1.0, 2.0, 3.0, 4.0}); err != nil {
 		t.Fatalf("WriteVector failed: %v", err)
 	}
-	if err := s.WriteVector(2, []float32{3.0, 4.0}); err != nil {
+	if err := s.WriteVector(2, []float32{3.0, 4.0, 5.0, 6.0}); err != nil {
 		t.Fatalf("WriteVector failed: %v", err)
 	}
-	if err := s.WriteVector(3, []float32{5.0, 6.0}); err != nil {
+	if err := s.WriteVector(3, []float32{5.0, 6.0, 7.0, 8.0}); err != nil {
 		t.Fatalf("WriteVector failed: %v", err)
 	}
 

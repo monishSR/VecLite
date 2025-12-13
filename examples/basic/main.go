@@ -18,7 +18,7 @@ func main() {
 	os.Remove(dbPath)
 	os.Remove(graphPath)
 
-	fmt.Println("=== VecLite Basic Example ===\n")
+	fmt.Println("=== VecLite Basic Example ===")
 
 	// Step 1: Create and configure the database
 	fmt.Println("1. Creating database...")

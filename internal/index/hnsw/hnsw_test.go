@@ -21,7 +21,7 @@ func createTestHNSW(t *testing.T) (*HNSWIndex, func()) {
 	tmpFile := createTempFile(t)
 	graphFile := tmpFile + ".graph"
 
-	store, err := storage.NewStorage(tmpFile, 0)
+	store, err := storage.NewStorage(tmpFile, 128, 0)
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
@@ -416,7 +416,7 @@ func TestHNSWIndex_SaveGraph_LoadGraph(t *testing.T) {
 	defer os.Remove(graphFile)
 
 	// Create and populate index
-	store1, err := storage.NewStorage(tmpFile, 0)
+	store1, err := storage.NewStorage(tmpFile, 128, 0)
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}
@@ -453,7 +453,7 @@ func TestHNSWIndex_SaveGraph_LoadGraph(t *testing.T) {
 	store1.Close()
 
 	// Load graph in new index
-	store2, err := storage.NewStorage(tmpFile, 0)
+	store2, err := storage.NewStorage(tmpFile, 128, 0)
 	if err != nil {
 		t.Fatalf("Failed to create storage: %v", err)
 	}

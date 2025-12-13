@@ -57,7 +57,7 @@ func New(config *Config) (*VecLite, error) {
 		cacheCapacity = config.CacheCapacity
 	}
 
-	store, err := storage.NewStorage(config.DataPath, cacheCapacity)
+	store, err := storage.NewStorage(config.DataPath, config.Dimension, cacheCapacity)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create storage: %w", err)
 	}
