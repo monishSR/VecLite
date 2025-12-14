@@ -130,8 +130,15 @@ func (s *Storage) loadIndex() error {
 		return err
 	}
 
-	// Store dimension
-	s.dimension = int(dim)
+	// Store dimension only if it matches Storage's dimension (or Storage is uninitialized)
+	// This prevents using corrupted metadata dimension
+	dimension := int(dim)
+	if dimension > 0 && (s.dimension == 0 || s.dimension == dimension) {
+		s.dimension = dimension
+	} else if s.dimension > 0 && s.dimension != dimension {
+		// Dimension mismatch - this indicates corrupted metadata
+		return errors.New("dimension mismatch in metadata")
+	}
 
 	// Calculate index start position
 	// Each entry: 8 bytes (ID) + 8 bytes (offset) = 16 bytes
@@ -179,25 +186,16 @@ func (s *Storage) saveIndex() error {
 	}
 	fileSize := fileInfo.Size()
 
-	// If file has index marker, truncate before it
+	// If file has index marker, truncate before it using findDataEnd
 	if fileSize >= 4 {
-		if _, err := s.file.Seek(-4, io.SeekEnd); err == nil {
-			var marker uint32
-			if err := binary.Read(s.file, binary.LittleEndian, &marker); err == nil && marker == indexMarker {
-				// Read count to find where index starts
-				if _, err := s.file.Seek(-8, io.SeekEnd); err == nil {
-					var count uint32
-					if err := binary.Read(s.file, binary.LittleEndian, &count); err == nil {
-						// New format: dimension + count + marker = 12 bytes
-						indexSize := int64(count * 16)
-						indexStart := fileSize - 12 - indexSize
-						if indexStart > 0 {
-							if err := s.file.Truncate(indexStart); err != nil {
-								return err
-							}
-						}
-					}
-				}
+		dataEnd, _, err := s.findDataEnd(fileSize)
+		if err != nil {
+			return err
+		}
+		// If dataEnd < fileSize, there's an index - truncate before it
+		if dataEnd < fileSize && dataEnd > 0 {
+			if err := s.file.Truncate(dataEnd); err != nil {
+				return err
 			}
 		}
 	}
@@ -232,65 +230,61 @@ func (s *Storage) saveIndex() error {
 	return nil
 }
 
-// rebuildIndex scans the file and builds the ID -> offset index
-// This is used as a fallback when loadIndex() fails (new file, corrupted index, etc.)
-// Note: Assumes lock is already held (called from Open)
-func (s *Storage) rebuildIndex() error {
-	if s.file == nil {
-		return errors.New("storage file not open")
+// findDataEnd attempts to read index metadata and calculate where data section ends
+// Returns (dataEnd, dimension, error)
+// If metadata cannot be read, returns (fileSize, s.dimension, nil) to scan entire file
+func (s *Storage) findDataEnd(fileSize int64) (int64, int, error) {
+	if fileSize < 4 {
+		return fileSize, s.dimension, nil
 	}
 
-	s.index = make(map[uint64]int64)
-
-	// Get file size to know where data ends (before any existing index)
-	fileInfo, err := s.file.Stat()
-	if err != nil {
-		return err
-	}
-	fileSize := fileInfo.Size()
-
-	// If file is empty, just return empty index
-	if fileSize == 0 {
-		return nil
+	// Check for index marker
+	if _, err := s.file.Seek(-4, io.SeekEnd); err != nil {
+		return fileSize, s.dimension, nil // Can't seek, scan entire file
 	}
 
-	// Check if there's an index at the end and find where data ends
-	dataEnd := fileSize
-	if fileSize >= 4 {
-		// Check for index marker
-		if _, err := s.file.Seek(-4, io.SeekEnd); err == nil {
-			var marker uint32
-			if err := binary.Read(s.file, binary.LittleEndian, &marker); err == nil && marker == indexMarker {
-				// Index exists, find where it starts
-				if _, err := s.file.Seek(-8, io.SeekEnd); err == nil {
-					var count uint32
-					if err := binary.Read(s.file, binary.LittleEndian, &count); err == nil {
-						// Read dimension (4 bytes before count)
-						if _, err := s.file.Seek(-12, io.SeekEnd); err == nil {
-							var dim uint32
-							if err := binary.Read(s.file, binary.LittleEndian, &dim); err == nil {
-								// New format: dimension + count + marker = 12 bytes
-								s.dimension = int(dim)
-								indexSize := int64(count * 16)
-								dataEnd = fileSize - 12 - indexSize
-								if dataEnd < 0 {
-									dataEnd = 0
-								}
-							}
-						}
-					}
-				}
-			}
-		}
+	var marker uint32
+	if err := binary.Read(s.file, binary.LittleEndian, &marker); err != nil {
+		return fileSize, s.dimension, nil // Can't read marker, scan entire file
 	}
 
-	// Seek to beginning and scan only the data portion
-	if _, err := s.file.Seek(0, 0); err != nil {
-		return err
+	if marker != indexMarker {
+		return fileSize, s.dimension, nil // No valid marker, scan entire file
 	}
 
-	// Scan through file and build index (stop at dataEnd)
-	// New format: records don't have dimension field, use dimension from metadata
+	// Index exists, find where it starts
+	if _, err := s.file.Seek(-8, io.SeekEnd); err != nil {
+		return fileSize, s.dimension, nil // Can't seek, scan entire file
+	}
+
+	var count uint32
+	if err := binary.Read(s.file, binary.LittleEndian, &count); err != nil {
+		return fileSize, s.dimension, nil // Can't read count, scan entire file
+	}
+
+	// Read dimension (4 bytes before count)
+	if _, err := s.file.Seek(-12, io.SeekEnd); err != nil {
+		return fileSize, s.dimension, nil // Can't seek, scan entire file
+	}
+
+	var dim uint32
+	if err := binary.Read(s.file, binary.LittleEndian, &dim); err != nil {
+		return fileSize, s.dimension, nil // Can't read dimension, scan entire file
+	}
+
+	// New format: dimension + count + marker = 12 bytes
+	dimension := int(dim)
+	indexSize := int64(count * 16)
+	dataEnd := fileSize - 12 - indexSize
+	if dataEnd < 0 {
+		dataEnd = 0
+	}
+
+	return dataEnd, dimension, nil
+}
+
+// scanDataSection scans the file from current position to dataEnd and builds the index
+func (s *Storage) scanDataSection(dataEnd int64, dimension int) error {
 	for {
 		// Get current offset (where this vector starts)
 		offset, err := s.file.Seek(0, io.SeekCurrent)
@@ -313,7 +307,7 @@ func (s *Storage) rebuildIndex() error {
 		}
 
 		// Skip vector data (dimension is in metadata, not per-record)
-		vectorSize := int64(s.dimension * 4) // float32 is 4 bytes
+		vectorSize := int64(dimension * 4) // float32 is 4 bytes
 		if _, err := s.file.Seek(vectorSize, io.SeekCurrent); err != nil {
 			if err == io.EOF {
 				break
@@ -330,6 +324,52 @@ func (s *Storage) rebuildIndex() error {
 	return nil
 }
 
+// rebuildIndex scans the file and builds the ID -> offset index
+// This is used as a fallback when loadIndex() fails (new file, corrupted index, etc.)
+// Note: Assumes lock is already held (called from Open)
+func (s *Storage) rebuildIndex() error {
+	if s.file == nil {
+		return errors.New("storage file not open")
+	}
+
+	s.index = make(map[uint64]int64)
+
+	// Get file size to know where data ends (before any existing index)
+	fileInfo, err := s.file.Stat()
+	if err != nil {
+		return err
+	}
+	fileSize := fileInfo.Size()
+
+	// If file is empty, just return empty index
+	if fileSize == 0 {
+		return nil
+	}
+
+	// Try to find where data ends by reading index metadata
+	dataEnd, dimension, err := s.findDataEnd(fileSize)
+	if err != nil {
+		return err
+	}
+
+	// Use dimension from metadata only if it matches Storage's dimension (or Storage is uninitialized)
+	// This prevents using corrupted metadata dimension
+	useDimension := s.dimension
+	if dimension > 0 && (s.dimension == 0 || s.dimension == dimension) {
+		useDimension = dimension
+		s.dimension = dimension // Update Storage's dimension if valid
+	}
+
+	// Seek to beginning and scan only the data portion
+	if _, err := s.file.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
+
+	// Scan through file and build index (stop at dataEnd)
+	// Use Storage's dimension to ensure we read vectors correctly even if metadata is corrupted
+	return s.scanDataSection(dataEnd, useDimension)
+}
+
 // compact removes all tombstones and rewrites the file with only active vectors
 // Note: Assumes lock is already held (called from Close)
 func (s *Storage) compact() error {
@@ -337,33 +377,22 @@ func (s *Storage) compact() error {
 		return errors.New("storage file not open")
 	}
 
-	// Read all active vectors directly (skip tombstones) - inline ReadAllVectors logic
+	// Read all active vectors directly (skip tombstones)
 	fileInfo, err := s.file.Stat()
 	if err != nil {
 		return err
 	}
 	fileSize := fileInfo.Size()
 
-	// Find where data ends (before index)
-	dataEnd := fileSize
-	if fileSize >= 4 {
-		// Check for index marker
-		if _, err := s.file.Seek(-4, io.SeekEnd); err == nil {
-			var marker uint32
-			if err := binary.Read(s.file, binary.LittleEndian, &marker); err == nil && marker == indexMarker {
-				// Index exists, find where it starts
-				if _, err := s.file.Seek(-8, io.SeekEnd); err == nil {
-					var count uint32
-					if err := binary.Read(s.file, binary.LittleEndian, &count); err == nil {
-						indexSize := int64(count * 16)     // Each entry: 8 bytes ID + 8 bytes offset
-						dataEnd = fileSize - 8 - indexSize // 8 bytes for count + marker
-						if dataEnd < 0 {
-							dataEnd = 0
-						}
-					}
-				}
-			}
-		}
+	// Find where data ends (before index) using findDataEnd
+	dataEnd, dimension, err := s.findDataEnd(fileSize)
+	if err != nil {
+		return err
+	}
+
+	// Update dimension if we successfully read it from metadata
+	if dimension > 0 {
+		s.dimension = dimension
 	}
 
 	// Seek to beginning and read all active vectors
@@ -627,34 +656,15 @@ func (s *Storage) ReadAllVectors() (map[uint64][]float32, error) {
 	}
 	fileSize := fileInfo.Size()
 
-	// Find where data ends (before index)
-	dataEnd := fileSize
-	if fileSize >= 4 {
-		// Check for index marker
-		if _, err := s.file.Seek(-4, io.SeekEnd); err == nil {
-			var marker uint32
-			if err := binary.Read(s.file, binary.LittleEndian, &marker); err == nil && marker == indexMarker {
-				// Index exists, find where it starts
-				if _, err := s.file.Seek(-8, io.SeekEnd); err == nil {
-					var count uint32
-					if err := binary.Read(s.file, binary.LittleEndian, &count); err == nil {
-						// Read dimension (4 bytes before count)
-						if _, err := s.file.Seek(-12, io.SeekEnd); err == nil {
-							var dim uint32
-							if err := binary.Read(s.file, binary.LittleEndian, &dim); err == nil {
-								// New format: dimension + count + marker = 12 bytes
-								s.dimension = int(dim)
-								indexSize := int64(count * 16)
-								dataEnd = fileSize - 12 - indexSize
-								if dataEnd < 0 {
-									dataEnd = 0
-								}
-							}
-						}
-					}
-				}
-			}
-		}
+	// Find where data ends (before index) using findDataEnd
+	dataEnd, dimension, err := s.findDataEnd(fileSize)
+	if err != nil {
+		return nil, err
+	}
+
+	// Update dimension if we successfully read it from metadata
+	if dimension > 0 {
+		s.dimension = dimension
 	}
 
 	// Seek to beginning

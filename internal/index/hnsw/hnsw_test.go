@@ -375,6 +375,82 @@ func TestHNSWIndex_Delete_NonExistent(t *testing.T) {
 	}
 }
 
+func TestHNSWIndex_Delete_EntryPoint(t *testing.T) {
+	index, cleanup := createTestHNSW(t)
+	defer cleanup()
+
+	// Insert vectors to create a graph
+	for i := uint64(1); i <= 10; i++ {
+		vector := make([]float32, 128)
+		for j := range vector {
+			vector[j] = float32(i) + float32(j)*0.001
+		}
+		if err := index.Insert(i, vector); err != nil {
+			t.Fatalf("Failed to insert vector %d: %v", i, err)
+		}
+	}
+
+	// Get the current entry point
+	entryPoint := index.entryPoint
+	if entryPoint == 0 {
+		t.Fatal("Entry point should be set")
+	}
+
+	// Delete the entry point
+	if err := index.Delete(entryPoint); err != nil {
+		t.Fatalf("Failed to delete entry point: %v", err)
+	}
+
+	// Verify entry point was updated
+	if index.entryPoint == entryPoint {
+		t.Error("Entry point should have been updated after deletion")
+	}
+
+	// Verify size decreased
+	if index.Size() != 9 {
+		t.Errorf("Expected size 9 after delete, got %d", index.Size())
+	}
+}
+
+func TestHNSWIndex_Delete_LastNode(t *testing.T) {
+	index, cleanup := createTestHNSW(t)
+	defer cleanup()
+
+	// Insert a single vector
+	vector := make([]float32, 128)
+	for j := range vector {
+		vector[j] = 1.0 + float32(j)*0.001
+	}
+	if err := index.Insert(1, vector); err != nil {
+		t.Fatalf("Failed to insert vector: %v", err)
+	}
+
+	entryPoint := index.entryPoint
+	if entryPoint != 1 {
+		t.Fatalf("Expected entry point 1, got %d", entryPoint)
+	}
+
+	// Delete the only node
+	if err := index.Delete(1); err != nil {
+		t.Fatalf("Failed to delete: %v", err)
+	}
+
+	// Verify entry point was reset
+	if index.entryPoint != 0 {
+		t.Errorf("Expected entry point 0 after deleting last node, got %d", index.entryPoint)
+	}
+
+	// Verify max level was reset
+	if index.maxLevel != -1 {
+		t.Errorf("Expected max level -1 after deleting last node, got %d", index.maxLevel)
+	}
+
+	// Verify size is 0
+	if index.Size() != 0 {
+		t.Errorf("Expected size 0, got %d", index.Size())
+	}
+}
+
 func TestHNSWIndex_Clear(t *testing.T) {
 	index, cleanup := createTestHNSW(t)
 	defer cleanup()
@@ -540,5 +616,164 @@ func TestHNSWIndex_MultipleLevels(t *testing.T) {
 			t.Errorf("Results not sorted: result %d has distance %f < result %d distance %f",
 				i, results[i].Distance, i-1, results[i-1].Distance)
 		}
+	}
+}
+
+func TestHNSWIndex_SaveGraph_NoStorage(t *testing.T) {
+	// Create HNSW index without storage
+	config := make(map[string]any)
+	config["M"] = 16
+	config["EfConstruction"] = 200
+	config["EfSearch"] = 50
+
+	index, err := NewHNSWIndex(128, config, nil)
+	if err != nil {
+		t.Fatalf("Failed to create HNSW index: %v", err)
+	}
+
+	// SaveGraph should error without storage
+	err = index.SaveGraph()
+	if err == nil {
+		t.Error("Expected error when saving graph without storage")
+	}
+}
+
+func TestHNSWIndex_LoadGraph_NoStorage(t *testing.T) {
+	// Create HNSW index without storage
+	config := make(map[string]any)
+	config["M"] = 16
+	config["EfConstruction"] = 200
+	config["EfSearch"] = 50
+
+	index, err := NewHNSWIndex(128, config, nil)
+	if err != nil {
+		t.Fatalf("Failed to create HNSW index: %v", err)
+	}
+
+	// LoadGraph should error without storage
+	err = index.LoadGraph()
+	if err == nil {
+		t.Error("Expected error when loading graph without storage")
+	}
+}
+
+func TestHNSWIndex_LoadGraph_InvalidFile(t *testing.T) {
+	tmpFile := createTempFile(t)
+	graphFile := tmpFile + ".graph"
+	defer os.Remove(tmpFile)
+	defer os.Remove(graphFile)
+
+	store, err := storage.NewStorage(tmpFile, 128, 0)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	if err := store.Open(); err != nil {
+		t.Fatalf("Failed to open storage: %v", err)
+	}
+	defer store.Close()
+
+	config := make(map[string]any)
+	config["M"] = 16
+	config["EfConstruction"] = 200
+	config["EfSearch"] = 50
+
+	index, err := NewHNSWIndex(128, config, store)
+	if err != nil {
+		t.Fatalf("Failed to create HNSW index: %v", err)
+	}
+
+	// Try to load non-existent graph file
+	err = index.LoadGraph()
+	if err == nil {
+		t.Error("Expected error when loading non-existent graph file")
+	}
+
+	// Create invalid graph file (wrong magic number)
+	invalidFile, err := os.Create(graphFile)
+	if err != nil {
+		t.Fatalf("Failed to create invalid graph file: %v", err)
+	}
+	invalidFile.Write([]byte{0, 0, 0, 0}) // Wrong magic number
+	invalidFile.Close()
+
+	// Try to load invalid graph file
+	err = index.LoadGraph()
+	if err == nil {
+		t.Error("Expected error when loading graph file with wrong magic number")
+	}
+}
+
+func TestHNSWIndex_SaveGraph_WithNodes(t *testing.T) {
+	tmpFile := createTempFile(t)
+	graphFile := tmpFile + ".graph"
+	defer os.Remove(tmpFile)
+	defer os.Remove(graphFile)
+
+	store, err := storage.NewStorage(tmpFile, 128, 0)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	if err := store.Open(); err != nil {
+		t.Fatalf("Failed to open storage: %v", err)
+	}
+	defer store.Close()
+
+	config := make(map[string]any)
+	config["M"] = 16
+	config["EfConstruction"] = 200
+	config["EfSearch"] = 50
+
+	index, err := NewHNSWIndex(128, config, store)
+	if err != nil {
+		t.Fatalf("Failed to create HNSW index: %v", err)
+	}
+
+	// Insert multiple vectors to create a graph
+	for i := uint64(1); i <= 10; i++ {
+		vector := make([]float32, 128)
+		for j := range vector {
+			vector[j] = float32(i) + float32(j)*0.001
+		}
+		if err := index.Insert(i, vector); err != nil {
+			t.Fatalf("Failed to insert vector %d: %v", i, err)
+		}
+	}
+
+	// Save graph should succeed
+	if err := index.SaveGraph(); err != nil {
+		t.Fatalf("SaveGraph failed: %v", err)
+	}
+
+	// Verify graph file exists
+	if _, err := os.Stat(graphFile); err != nil {
+		t.Errorf("Graph file should exist after SaveGraph: %v", err)
+	}
+}
+
+func TestOpenHNSWIndex_NoStorage(t *testing.T) {
+	// Test OpenHNSWIndex with nil storage
+	_, err := OpenHNSWIndex(nil)
+	if err == nil {
+		t.Error("Expected error when opening HNSW index without storage")
+	}
+}
+
+func TestOpenHNSWIndex_NoGraphFile(t *testing.T) {
+	tmpFile := createTempFile(t)
+	defer os.Remove(tmpFile)
+
+	store, err := storage.NewStorage(tmpFile, 128, 0)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	if err := store.Open(); err != nil {
+		t.Fatalf("Failed to open storage: %v", err)
+	}
+	defer store.Close()
+
+	// Test OpenHNSWIndex when graph file doesn't exist
+	_, err = OpenHNSWIndex(store)
+	if err == nil {
+		t.Error("Expected error when opening HNSW index without graph file")
 	}
 }

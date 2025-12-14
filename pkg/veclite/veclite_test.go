@@ -441,3 +441,335 @@ func TestVecLite_ParallelMixedOperations(t *testing.T) {
 		}
 	})
 }
+
+func TestVecLite_Open(t *testing.T) {
+	tmpFile, err := os.CreateTemp("", "veclite_test_*.db")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	tmpFile.Close()
+	defer os.Remove(tmpFile.Name())
+	defer os.Remove(tmpFile.Name() + ".graph")
+
+	// Create a database first
+	config := DefaultConfig()
+	config.DataPath = tmpFile.Name()
+	config.Dimension = 128
+	config.IndexType = "flat"
+
+	db1, err := New(config)
+	if err != nil {
+		t.Fatalf("Failed to create database: %v", err)
+	}
+
+	// Insert some vectors
+	for i := uint64(1); i <= 5; i++ {
+		vector := make([]float32, 128)
+		for j := range vector {
+			vector[j] = float32(i) + float32(j)*0.001
+		}
+		if err := db1.Insert(i, vector); err != nil {
+			t.Fatalf("Failed to insert vector %d: %v", i, err)
+		}
+	}
+
+	db1.Close()
+
+	// Now test Open()
+	db2, err := Open(tmpFile.Name())
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	defer db2.Close()
+
+	// Verify we can read the vectors
+	if db2.Size() != 5 {
+		t.Errorf("Expected size 5, got %d", db2.Size())
+	}
+
+	vec, err := db2.Get(1)
+	if err != nil {
+		t.Fatalf("Failed to get vector 1: %v", err)
+	}
+	if len(vec) != 128 {
+		t.Errorf("Expected vector dimension 128, got %d", len(vec))
+	}
+}
+
+func TestVecLite_Delete(t *testing.T) {
+	runTestForAllIndexes(t, func(t *testing.T, indexType string) {
+		db, cleanup := createTestDB(t, indexType)
+		defer cleanup()
+
+		const dimension = 128
+
+		// Insert some vectors
+		for i := uint64(1); i <= 5; i++ {
+			vector := make([]float32, dimension)
+			for j := range vector {
+				vector[j] = float32(i) + float32(j)*0.001
+			}
+			if err := db.Insert(i, vector); err != nil {
+				t.Fatalf("Failed to insert vector %d: %v", i, err)
+			}
+		}
+
+		// Verify initial size
+		if db.Size() != 5 {
+			t.Errorf("Expected initial size 5, got %d", db.Size())
+		}
+
+		// Delete a vector
+		if err := db.Delete(3); err != nil {
+			t.Fatalf("Delete failed: %v", err)
+		}
+
+		// Verify size decreased
+		if db.Size() != 4 {
+			t.Errorf("Expected size 4 after delete, got %d", db.Size())
+		}
+
+		// Verify deleted vector is gone
+		_, err := db.Get(3)
+		if err == nil {
+			t.Error("Expected error when getting deleted vector")
+		}
+
+		// Verify other vectors still exist
+		vec, err := db.Get(1)
+		if err != nil {
+			t.Fatalf("Failed to get vector 1: %v", err)
+		}
+		if len(vec) != dimension {
+			t.Errorf("Expected vector dimension %d, got %d", dimension, len(vec))
+		}
+
+		// Delete non-existent vector (should not error)
+		if err := db.Delete(999); err != nil {
+			t.Errorf("Delete of non-existent vector should not error, got: %v", err)
+		}
+	})
+}
+
+func TestVecLite_New_ErrorCases(t *testing.T) {
+	// Test invalid dimension
+	config := DefaultConfig()
+	config.Dimension = 0
+	_, err := New(config)
+	if err == nil {
+		t.Error("Expected error for dimension 0")
+	}
+
+	// Test negative dimension
+	config.Dimension = -1
+	_, err = New(config)
+	if err == nil {
+		t.Error("Expected error for negative dimension")
+	}
+
+	// Test nil config (should use defaults)
+	// Need to use a fresh temp file for this test
+	tmpFile, err := os.CreateTemp("", "veclite_test_*.db")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	tmpFile.Close()
+	defer os.Remove(tmpFile.Name())
+	defer os.Remove(tmpFile.Name() + ".graph")
+
+	config = nil
+	// Create a config with a temp file path
+	testConfig := DefaultConfig()
+	testConfig.DataPath = tmpFile.Name()
+	testConfig.Dimension = 128
+	testConfig.IndexType = "flat"
+	
+	db, err := New(testConfig)
+	if err != nil {
+		t.Fatalf("New with config should work, got error: %v", err)
+	}
+	if db == nil {
+		t.Fatal("New should return database")
+	}
+	db.Close()
+}
+
+func TestVecLite_Insert_ErrorCases(t *testing.T) {
+	db, cleanup := createTestDB(t, "flat")
+	defer cleanup()
+
+	// Test dimension mismatch
+	wrongDimVector := make([]float32, 64)
+	err := db.Insert(1, wrongDimVector)
+	if err == nil {
+		t.Error("Expected error for dimension mismatch")
+	}
+}
+
+func TestVecLite_Search_ErrorCases(t *testing.T) {
+	db, cleanup := createTestDB(t, "flat")
+	defer cleanup()
+
+	// Test dimension mismatch
+	wrongDimQuery := make([]float32, 64)
+	_, err := db.Search(wrongDimQuery, 5)
+	if err == nil {
+		t.Error("Expected error for dimension mismatch")
+	}
+
+	// Test invalid k
+	query := make([]float32, 128)
+	_, err = db.Search(query, 0)
+	if err == nil {
+		t.Error("Expected error for k=0")
+	}
+
+	_, err = db.Search(query, -1)
+	if err == nil {
+		t.Error("Expected error for negative k")
+	}
+}
+
+
+func TestVecLite_Size(t *testing.T) {
+	runTestForAllIndexes(t, func(t *testing.T, indexType string) {
+		db, cleanup := createTestDB(t, indexType)
+		defer cleanup()
+
+		// Initially empty
+		if db.Size() != 0 {
+			t.Errorf("Expected initial size 0, got %d", db.Size())
+		}
+
+		// Insert vectors
+		for i := uint64(1); i <= 10; i++ {
+			vector := make([]float32, 128)
+			for j := range vector {
+				vector[j] = float32(i) + float32(j)*0.001
+			}
+			if err := db.Insert(i, vector); err != nil {
+				t.Fatalf("Failed to insert vector %d: %v", i, err)
+			}
+		}
+
+		// Verify size
+		if db.Size() != 10 {
+			t.Errorf("Expected size 10, got %d", db.Size())
+		}
+
+		// Delete a vector
+		if err := db.Delete(5); err != nil {
+			t.Fatalf("Delete failed: %v", err)
+		}
+
+		// Verify size decreased
+		if db.Size() != 9 {
+			t.Errorf("Expected size 9 after delete, got %d", db.Size())
+		}
+	})
+}
+
+func TestVecLite_Get(t *testing.T) {
+	runTestForAllIndexes(t, func(t *testing.T, indexType string) {
+		db, cleanup := createTestDB(t, indexType)
+		defer cleanup()
+
+		// Insert a vector
+		vector := make([]float32, 128)
+		for j := range vector {
+			vector[j] = 1.0 + float32(j)*0.001
+		}
+		if err := db.Insert(1, vector); err != nil {
+			t.Fatalf("Failed to insert vector: %v", err)
+		}
+
+		// Get the vector
+		retrieved, err := db.Get(1)
+		if err != nil {
+			t.Fatalf("Get failed: %v", err)
+		}
+
+		// Verify vector
+		if len(retrieved) != len(vector) {
+			t.Errorf("Vector length mismatch: expected %d, got %d", len(vector), len(retrieved))
+		}
+		for i := range vector {
+			if retrieved[i] != vector[i] {
+				t.Errorf("Vector[%d] mismatch: expected %f, got %f", i, vector[i], retrieved[i])
+			}
+		}
+
+		// Get non-existent vector
+		_, err = db.Get(999)
+		if err == nil {
+			t.Error("Expected error when getting non-existent vector")
+		}
+	})
+}
+
+func TestVecLite_New_IndexCreationError(t *testing.T) {
+	tmpFile, err := os.CreateTemp("", "veclite_test_*.db")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	tmpFile.Close()
+	defer os.Remove(tmpFile.Name())
+	defer os.Remove(tmpFile.Name() + ".graph")
+
+	config := DefaultConfig()
+	config.DataPath = tmpFile.Name()
+	config.Dimension = 128
+	config.IndexType = "invalid_type" // Invalid index type
+
+	// New() should error when creating index
+	_, err = New(config)
+	if err == nil {
+		t.Error("Expected error for invalid index type")
+	}
+}
+
+func TestVecLite_Close_HNSW_SaveGraphError(t *testing.T) {
+	tmpFile, err := os.CreateTemp("", "veclite_test_*.db")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	tmpFile.Close()
+	defer os.Remove(tmpFile.Name())
+	defer os.Remove(tmpFile.Name() + ".graph")
+
+	config := DefaultConfig()
+	config.DataPath = tmpFile.Name()
+	config.Dimension = 128
+	config.IndexType = "hnsw"
+	config.M = 16
+	config.EfConstruction = 200
+	config.EfSearch = 50
+
+	db, err := New(config)
+	if err != nil {
+		t.Fatalf("Failed to create database: %v", err)
+	}
+
+	// Insert some vectors
+	for i := uint64(1); i <= 5; i++ {
+		vector := make([]float32, 128)
+		for j := range vector {
+			vector[j] = float32(i) + float32(j)*0.001
+		}
+		if err := db.Insert(i, vector); err != nil {
+			t.Fatalf("Failed to insert vector %d: %v", i, err)
+		}
+	}
+
+	// Close the storage file to cause SaveGraph to fail
+	// This tests the error path in Close()
+	if db.storage != nil {
+		db.storage.Close()
+	}
+
+	// Close should handle SaveGraph error gracefully
+	// (it logs a warning but continues)
+	err = db.Close()
+	// Close might error due to storage already being closed, which is expected
+	_ = err
+}

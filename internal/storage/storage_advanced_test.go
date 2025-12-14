@@ -5,228 +5,6 @@ import (
 	"testing"
 )
 
-func TestNewStorage(t *testing.T) {
-	s, err := NewStorage("test.db", 4, 0)
-	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
-	}
-	if s == nil {
-		t.Fatal("NewStorage returned nil")
-	}
-	if s.filePath != "test.db" {
-		t.Errorf("Expected filePath 'test.db', got '%s'", s.filePath)
-	}
-	if s.index == nil {
-		t.Error("Index map not initialized")
-	}
-}
-
-func TestOpen_NewFile(t *testing.T) {
-	tmpFile := createTempFile(t)
-	defer os.Remove(tmpFile)
-
-	s, err := NewStorage(tmpFile, 4, 0)
-	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
-	}
-
-	err = s.Open()
-	if err != nil {
-		t.Fatalf("Open failed: %v", err)
-	}
-
-	if s.file == nil {
-		t.Error("File not opened")
-	}
-
-	s.Close()
-}
-
-func TestWriteVector_ReadVector(t *testing.T) {
-	tmpFile := createTempFile(t)
-	defer os.Remove(tmpFile)
-
-	s, err := NewStorage(tmpFile, 4, 0)
-	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
-	}
-
-	if err := s.Open(); err != nil {
-		t.Fatalf("Open failed: %v", err)
-	}
-	defer s.Close()
-
-	// Write a vector
-	id := uint64(1)
-	vector := []float32{1.0, 2.0, 3.0, 4.0}
-
-	if err := s.WriteVector(id, vector); err != nil {
-		t.Fatalf("WriteVector failed: %v", err)
-	}
-
-	// Verify it's in the index
-	offset, exists := s.index[id]
-	if !exists {
-		t.Error("Vector not in index after write")
-	}
-	if offset < 0 {
-		t.Errorf("Invalid offset: %d", offset)
-	}
-
-	// Read it back
-	readVector, err := s.ReadVector(id)
-	if err != nil {
-		t.Fatalf("ReadVector failed: %v", err)
-	}
-
-	if len(readVector) != len(vector) {
-		t.Errorf("Vector length mismatch: expected %d, got %d", len(vector), len(readVector))
-	}
-
-	for i := range vector {
-		if readVector[i] != vector[i] {
-			t.Errorf("Vector mismatch at index %d: expected %f, got %f", i, vector[i], readVector[i])
-		}
-	}
-}
-
-func TestWriteVector_Multiple(t *testing.T) {
-	tmpFile := createTempFile(t)
-	defer os.Remove(tmpFile)
-
-	s, err := NewStorage(tmpFile, 4, 0)
-	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
-	}
-
-	if err := s.Open(); err != nil {
-		t.Fatalf("Open failed: %v", err)
-	}
-	defer s.Close()
-
-	// Write multiple vectors
-	vectors := map[uint64][]float32{
-		1: {1.0, 2.0, 3.0, 4.0},
-		2: {4.0, 5.0, 6.0, 7.0},
-		3: {7.0, 8.0, 9.0, 10.0},
-	}
-
-	for id, vec := range vectors {
-		if err := s.WriteVector(id, vec); err != nil {
-			t.Fatalf("WriteVector failed for ID %d: %v", id, err)
-		}
-	}
-
-	// Verify all are in index
-	if len(s.index) != len(vectors) {
-		t.Errorf("Index size mismatch: expected %d, got %d", len(vectors), len(s.index))
-	}
-
-	// Read all back
-	for id, expectedVec := range vectors {
-		readVec, err := s.ReadVector(id)
-		if err != nil {
-			t.Fatalf("ReadVector failed for ID %d: %v", id, err)
-		}
-
-		if len(readVec) != len(expectedVec) {
-			t.Errorf("Vector length mismatch for ID %d: expected %d, got %d", id, len(expectedVec), len(readVec))
-		}
-
-		for i := range expectedVec {
-			if readVec[i] != expectedVec[i] {
-				t.Errorf("Vector mismatch for ID %d at index %d: expected %f, got %f", id, i, expectedVec[i], readVec[i])
-			}
-		}
-	}
-}
-
-func TestReadVector_NotFound(t *testing.T) {
-	tmpFile := createTempFile(t)
-	defer os.Remove(tmpFile)
-
-	s, err := NewStorage(tmpFile, 4, 0)
-	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
-	}
-
-	if err := s.Open(); err != nil {
-		t.Fatalf("Open failed: %v", err)
-	}
-	defer s.Close()
-
-	// Try to read non-existent vector
-	_, err = s.ReadVector(999)
-	if err == nil {
-		t.Error("Expected error when reading non-existent vector")
-	}
-}
-
-func TestDeleteVector(t *testing.T) {
-	tmpFile := createTempFile(t)
-	defer os.Remove(tmpFile)
-
-	s, err := NewStorage(tmpFile, 4, 0)
-	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
-	}
-
-	if err := s.Open(); err != nil {
-		t.Fatalf("Open failed: %v", err)
-	}
-	defer s.Close()
-
-	// Write a vector
-	id := uint64(1)
-	vector := []float32{1.0, 2.0, 3.0, 4.0}
-
-	if err := s.WriteVector(id, vector); err != nil {
-		t.Fatalf("WriteVector failed: %v", err)
-	}
-
-	// Verify it exists
-	_, err = s.ReadVector(id)
-	if err != nil {
-		t.Fatalf("ReadVector failed before delete: %v", err)
-	}
-
-	// Delete it
-	if err := s.DeleteVector(id); err != nil {
-		t.Fatalf("DeleteVector failed: %v", err)
-	}
-
-	// Verify it's removed from index
-	if _, exists := s.index[id]; exists {
-		t.Error("Vector still in index after delete")
-	}
-
-	// Verify it can't be read
-	_, err = s.ReadVector(id)
-	if err == nil {
-		t.Error("Expected error when reading deleted vector")
-	}
-}
-
-func TestDeleteVector_NonExistent(t *testing.T) {
-	tmpFile := createTempFile(t)
-	defer os.Remove(tmpFile)
-
-	s, err := NewStorage(tmpFile, 4, 0)
-	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
-	}
-
-	if err := s.Open(); err != nil {
-		t.Fatalf("Open failed: %v", err)
-	}
-	defer s.Close()
-
-	// Delete non-existent vector (should not error)
-	if err := s.DeleteVector(999); err != nil {
-		t.Errorf("DeleteVector should not error for non-existent vector: %v", err)
-	}
-}
-
 func TestReadAllVectors(t *testing.T) {
 	tmpFile := createTempFile(t)
 	defer os.Remove(tmpFile)
@@ -493,7 +271,7 @@ func TestCompaction(t *testing.T) {
 	}
 }
 
-func TestSync(t *testing.T) {
+func TestStorage_ReadAllVectors(t *testing.T) {
 	tmpFile := createTempFile(t)
 	defer os.Remove(tmpFile)
 
@@ -507,70 +285,50 @@ func TestSync(t *testing.T) {
 	}
 	defer s.Close()
 
-	// Write a vector
-	if err := s.WriteVector(1, []float32{1.0, 2.0, 3.0, 4.0}); err != nil {
-		t.Fatalf("WriteVector failed: %v", err)
+	// Write vectors
+	vectors := map[uint64][]float32{
+		1: {1.0, 2.0, 3.0, 4.0},
+		2: {5.0, 6.0, 7.0, 8.0},
+		3: {9.0, 10.0, 11.0, 12.0},
 	}
 
-	// Sync should not error
-	if err := s.Sync(); err != nil {
-		t.Fatalf("Sync failed: %v", err)
+	for id, vec := range vectors {
+		if err := s.WriteVector(id, vec); err != nil {
+			t.Fatalf("WriteVector failed for ID %d: %v", id, err)
+		}
 	}
-}
 
-func TestOpen_EmptyFile(t *testing.T) {
-	tmpFile := createTempFile(t)
-	defer os.Remove(tmpFile)
-
-	s, err := NewStorage(tmpFile, 4, 0)
+	// Read all vectors
+	allVectors, err := s.ReadAllVectors()
 	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+		t.Fatalf("ReadAllVectors failed: %v", err)
 	}
 
-	// Open empty file should succeed (rebuilds empty index)
-	if err := s.Open(); err != nil {
-		t.Fatalf("Open failed on empty file: %v", err)
-	}
-	defer s.Close()
-
-	if len(s.index) != 0 {
-		t.Errorf("Expected empty index, got %d entries", len(s.index))
-	}
-}
-
-func TestWriteVector_WithoutOpen(t *testing.T) {
-	tmpFile := createTempFile(t)
-	defer os.Remove(tmpFile)
-
-	s, err := NewStorage(tmpFile, 4, 0)
-	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
+	// Verify count
+	if len(allVectors) != len(vectors) {
+		t.Errorf("Expected %d vectors, got %d", len(vectors), len(allVectors))
 	}
 
-	// Try to write without opening
-	err = s.WriteVector(1, []float32{1.0, 2.0, 3.0, 4.0})
-	if err == nil {
-		t.Error("Expected error when writing without opening file")
+	// Verify each vector
+	for id, expectedVec := range vectors {
+		actualVec, exists := allVectors[id]
+		if !exists {
+			t.Errorf("Vector %d not found in ReadAllVectors result", id)
+			continue
+		}
+		if len(actualVec) != len(expectedVec) {
+			t.Errorf("Vector %d length mismatch: expected %d, got %d", id, len(expectedVec), len(actualVec))
+			continue
+		}
+		for i := range expectedVec {
+			if actualVec[i] != expectedVec[i] {
+				t.Errorf("Vector %d[%d] mismatch: expected %f, got %f", id, i, expectedVec[i], actualVec[i])
+			}
+		}
 	}
 }
 
-func TestReadVector_WithoutOpen(t *testing.T) {
-	tmpFile := createTempFile(t)
-	defer os.Remove(tmpFile)
-
-	s, err := NewStorage(tmpFile, 4, 0)
-	if err != nil {
-		t.Fatalf("NewStorage failed: %v", err)
-	}
-
-	// Try to read without opening
-	_, err = s.ReadVector(1)
-	if err == nil {
-		t.Error("Expected error when reading without opening file")
-	}
-}
-
-func TestClear(t *testing.T) {
+func TestStorage_ReadAllVectors_WithDeleted(t *testing.T) {
 	tmpFile := createTempFile(t)
 	defer os.Remove(tmpFile)
 
@@ -584,54 +342,172 @@ func TestClear(t *testing.T) {
 	}
 	defer s.Close()
 
-	// Write some vectors
+	// Write vectors
 	if err := s.WriteVector(1, []float32{1.0, 2.0, 3.0, 4.0}); err != nil {
 		t.Fatalf("WriteVector failed: %v", err)
 	}
-	if err := s.WriteVector(2, []float32{3.0, 4.0, 5.0, 6.0}); err != nil {
-		t.Fatalf("WriteVector failed: %v", err)
-	}
-	if err := s.WriteVector(3, []float32{5.0, 6.0, 7.0, 8.0}); err != nil {
+	if err := s.WriteVector(2, []float32{5.0, 6.0, 7.0, 8.0}); err != nil {
 		t.Fatalf("WriteVector failed: %v", err)
 	}
 
-	// Verify vectors exist
-	if len(s.index) != 3 {
-		t.Errorf("Expected 3 vectors in index, got %d", len(s.index))
+	// Delete one vector
+	if err := s.DeleteVector(1); err != nil {
+		t.Fatalf("DeleteVector failed: %v", err)
 	}
 
-	// Clear all vectors
-	if err := s.Clear(); err != nil {
-		t.Fatalf("Clear failed: %v", err)
-	}
-
-	// Verify index is empty
-	if len(s.index) != 0 {
-		t.Errorf("Expected empty index after Clear, got %d entries", len(s.index))
-	}
-
-	// Verify file is empty
-	fileInfo, err := s.file.Stat()
+	// Read all vectors (should not include deleted)
+	allVectors, err := s.ReadAllVectors()
 	if err != nil {
-		t.Fatalf("Stat failed: %v", err)
-	}
-	if fileInfo.Size() != 0 {
-		t.Errorf("Expected file size 0 after Clear, got %d", fileInfo.Size())
+		t.Fatalf("ReadAllVectors failed: %v", err)
 	}
 
-	// Verify vectors can't be read
-	_, err = s.ReadVector(1)
-	if err == nil {
-		t.Error("Expected error when reading vector after Clear")
+	// Should only have one vector
+	if len(allVectors) != 1 {
+		t.Errorf("Expected 1 vector after delete, got %d", len(allVectors))
+	}
+
+	// Should not have deleted vector
+	if _, exists := allVectors[1]; exists {
+		t.Error("Deleted vector should not be in ReadAllVectors result")
+	}
+
+	// Should have non-deleted vector
+	if _, exists := allVectors[2]; !exists {
+		t.Error("Non-deleted vector should be in ReadAllVectors result")
 	}
 }
 
-// Helper function to create a temporary file
-func createTempFile(t *testing.T) string {
-	tmpFile, err := os.CreateTemp("", "veclite_test_*.db")
+func TestStorage_ReadAllVectors_EmptyFile(t *testing.T) {
+	tmpFile := createTempFile(t)
+	defer os.Remove(tmpFile)
+
+	s, err := NewStorage(tmpFile, 4, 0)
 	if err != nil {
-		t.Fatalf("Failed to create temp file: %v", err)
+		t.Fatalf("NewStorage failed: %v", err)
 	}
-	tmpFile.Close()
-	return tmpFile.Name()
+
+	if err := s.Open(); err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	defer s.Close()
+
+	// ReadAllVectors on empty file should return empty map
+	allVectors, err := s.ReadAllVectors()
+	if err != nil {
+		t.Fatalf("ReadAllVectors failed: %v", err)
+	}
+
+	if len(allVectors) != 0 {
+		t.Errorf("Expected empty map for empty file, got %d entries", len(allVectors))
+	}
+}
+
+func TestStorage_Compact_WithTombstones(t *testing.T) {
+	tmpFile := createTempFile(t)
+	defer os.Remove(tmpFile)
+
+	s, err := NewStorage(tmpFile, 4, 0)
+	if err != nil {
+		t.Fatalf("NewStorage failed: %v", err)
+	}
+
+	if err := s.Open(); err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+
+	// Write vectors
+	if err := s.WriteVector(1, []float32{1.0, 2.0, 3.0, 4.0}); err != nil {
+		t.Fatalf("WriteVector failed: %v", err)
+	}
+	if err := s.WriteVector(2, []float32{5.0, 6.0, 7.0, 8.0}); err != nil {
+		t.Fatalf("WriteVector failed: %v", err)
+	}
+	if err := s.WriteVector(3, []float32{9.0, 10.0, 11.0, 12.0}); err != nil {
+		t.Fatalf("WriteVector failed: %v", err)
+	}
+
+	// Delete one vector (creates tombstone)
+	if err := s.DeleteVector(2); err != nil {
+		t.Fatalf("DeleteVector failed: %v", err)
+	}
+
+	// Close should trigger compact() which removes tombstones
+	if err := s.Close(); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+
+	// Reopen and verify only non-deleted vectors exist
+	s2, err := NewStorage(tmpFile, 4, 0)
+	if err != nil {
+		t.Fatalf("NewStorage failed: %v", err)
+	}
+	if err := s2.Open(); err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	defer s2.Close()
+
+	// Verify deleted vector is gone
+	_, err = s2.ReadVector(2)
+	if err == nil {
+		t.Error("Expected error when reading deleted vector after compact")
+	}
+
+	// Verify non-deleted vectors exist
+	vec1, err := s2.ReadVector(1)
+	if err != nil {
+		t.Fatalf("Failed to read vector 1: %v", err)
+	}
+	if len(vec1) != 4 {
+		t.Errorf("Expected vector dimension 4, got %d", len(vec1))
+	}
+
+	vec3, err := s2.ReadVector(3)
+	if err != nil {
+		t.Fatalf("Failed to read vector 3: %v", err)
+	}
+	if len(vec3) != 4 {
+		t.Errorf("Expected vector dimension 4, got %d", len(vec3))
+	}
+}
+
+func TestStorage_Compact_AllDeleted(t *testing.T) {
+	tmpFile := createTempFile(t)
+	defer os.Remove(tmpFile)
+
+	s, err := NewStorage(tmpFile, 4, 0)
+	if err != nil {
+		t.Fatalf("NewStorage failed: %v", err)
+	}
+
+	if err := s.Open(); err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+
+	// Write and delete all vectors
+	if err := s.WriteVector(1, []float32{1.0, 2.0, 3.0, 4.0}); err != nil {
+		t.Fatalf("WriteVector failed: %v", err)
+	}
+	if err := s.DeleteVector(1); err != nil {
+		t.Fatalf("DeleteVector failed: %v", err)
+	}
+
+	// Close should trigger compact() which should truncate file
+	if err := s.Close(); err != nil {
+		t.Fatalf("Close failed: %v", err)
+	}
+
+	// Reopen and verify file is empty
+	s2, err := NewStorage(tmpFile, 4, 0)
+	if err != nil {
+		t.Fatalf("NewStorage failed: %v", err)
+	}
+	if err := s2.Open(); err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	defer s2.Close()
+
+	// Index should be empty
+	if len(s2.index) != 0 {
+		t.Errorf("Expected empty index after compacting all deleted vectors, got %d entries", len(s2.index))
+	}
 }

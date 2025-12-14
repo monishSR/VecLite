@@ -525,6 +525,28 @@ func TestFlatIndex_OpenFlatIndex_NoStorage(t *testing.T) {
 	}
 }
 
+func TestFlatIndex_Delete_NoStorage(t *testing.T) {
+	// Create FlatIndex without storage
+	index := NewFlatIndex(3, nil)
+
+	// Delete should error when storage is nil
+	err := index.Delete(1)
+	if err == nil {
+		t.Error("Expected error when deleting without storage")
+	}
+}
+
+func TestFlatIndex_Clear_NoStorage(t *testing.T) {
+	// Create FlatIndex without storage
+	index := NewFlatIndex(3, nil)
+
+	// Clear should error when storage is nil
+	err := index.Clear()
+	if err == nil {
+		t.Error("Expected error when clearing without storage")
+	}
+}
+
 func TestFlatIndex_OpenFlatIndex_DimensionMismatch(t *testing.T) {
 	// Create temporary storage file
 	tmpFile, err := os.CreateTemp("", "veclite_test_*.db")
