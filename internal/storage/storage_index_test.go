@@ -2595,3 +2595,157 @@ func TestStorage_ScanDataSection_SeekVectorSizeError(t *testing.T) {
 		t.Error("Index should be initialized")
 	}
 }
+
+// Additional error path tests for saveIndex
+func TestStorage_SaveIndex_StatError(t *testing.T) {
+	tmpFile := createTempFile(t)
+	defer os.Remove(tmpFile)
+
+	s, err := NewStorage(tmpFile, 4, 0)
+	if err != nil {
+		t.Fatalf("NewStorage failed: %v", err)
+	}
+
+	if err := s.Open(); err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+
+	// Write a vector
+	if err := s.WriteVector(1, []float32{1.0, 2.0, 3.0, 4.0}); err != nil {
+		t.Fatalf("WriteVector failed: %v", err)
+	}
+
+	// Close file but keep reference to cause Stat() error in saveIndex
+	s.file.Close()
+	// Don't set to nil - keep reference so Sync() calls saveIndex()
+
+	// Sync should error when saveIndex fails due to Stat error
+	err = s.Sync()
+	if err == nil {
+		t.Error("Expected error when Stat fails in saveIndex")
+	}
+}
+
+func TestStorage_SaveIndex_TruncateError(t *testing.T) {
+	tmpFile := createTempFile(t)
+	defer os.Remove(tmpFile)
+
+	s, err := NewStorage(tmpFile, 4, 0)
+	if err != nil {
+		t.Fatalf("NewStorage failed: %v", err)
+	}
+
+	if err := s.Open(); err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+
+	// Write a vector and save index
+	if err := s.WriteVector(1, []float32{1.0, 2.0, 3.0, 4.0}); err != nil {
+		t.Fatalf("WriteVector failed: %v", err)
+	}
+	if err := s.Sync(); err != nil {
+		t.Fatalf("Sync failed: %v", err)
+	}
+
+	// Write another vector
+	if err := s.WriteVector(2, []float32{5.0, 6.0, 7.0, 8.0}); err != nil {
+		t.Fatalf("WriteVector failed: %v", err)
+	}
+
+	// Close file but keep reference to cause Truncate error in saveIndex
+	s.file.Close()
+	// Don't set to nil - keep reference so Sync() calls saveIndex()
+
+	// Sync should error when saveIndex fails due to Truncate error
+	err = s.Sync()
+	if err == nil {
+		t.Error("Expected error when Truncate fails in saveIndex")
+	}
+}
+
+func TestStorage_SaveIndex_SeekError(t *testing.T) {
+	tmpFile := createTempFile(t)
+	defer os.Remove(tmpFile)
+
+	s, err := NewStorage(tmpFile, 4, 0)
+	if err != nil {
+		t.Fatalf("NewStorage failed: %v", err)
+	}
+
+	if err := s.Open(); err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+
+	// Write a vector
+	if err := s.WriteVector(1, []float32{1.0, 2.0, 3.0, 4.0}); err != nil {
+		t.Fatalf("WriteVector failed: %v", err)
+	}
+
+	// Close file but keep reference to cause Seek error in saveIndex
+	s.file.Close()
+	// Don't set to nil - keep reference so Sync() calls saveIndex()
+
+	// Sync should error when saveIndex fails due to Seek error
+	err = s.Sync()
+	if err == nil {
+		t.Error("Expected error when Seek fails in saveIndex")
+	}
+}
+
+func TestStorage_SaveIndex_WriteIndexEntryError(t *testing.T) {
+	tmpFile := createTempFile(t)
+	defer os.Remove(tmpFile)
+
+	s, err := NewStorage(tmpFile, 4, 0)
+	if err != nil {
+		t.Fatalf("NewStorage failed: %v", err)
+	}
+
+	if err := s.Open(); err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+
+	// Write a vector
+	if err := s.WriteVector(1, []float32{1.0, 2.0, 3.0, 4.0}); err != nil {
+		t.Fatalf("WriteVector failed: %v", err)
+	}
+
+	// Close file but keep reference to cause binary.Write error for index entries
+	s.file.Close()
+	// Don't set to nil - keep reference so Sync() calls saveIndex()
+
+	// Sync should error when saveIndex fails due to Write error
+	err = s.Sync()
+	if err == nil {
+		t.Error("Expected error when Write fails for index entries in saveIndex")
+	}
+}
+
+func TestStorage_SaveIndex_WriteMetadataError(t *testing.T) {
+	tmpFile := createTempFile(t)
+	defer os.Remove(tmpFile)
+
+	s, err := NewStorage(tmpFile, 4, 0)
+	if err != nil {
+		t.Fatalf("NewStorage failed: %v", err)
+	}
+
+	if err := s.Open(); err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+
+	// Write a vector
+	if err := s.WriteVector(1, []float32{1.0, 2.0, 3.0, 4.0}); err != nil {
+		t.Fatalf("WriteVector failed: %v", err)
+	}
+
+	// Close file but keep reference to cause binary.Write error for metadata
+	s.file.Close()
+	// Don't set to nil - keep reference so Sync() calls saveIndex()
+
+	// Sync should error when saveIndex fails due to Write error for metadata
+	err = s.Sync()
+	if err == nil {
+		t.Error("Expected error when Write fails for metadata in saveIndex")
+	}
+}

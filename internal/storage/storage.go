@@ -525,6 +525,22 @@ func (s *Storage) Close() error {
 
 // WriteVector writes a vector to storage
 // Always appends to the end of the file
+// writeVectorID writes the vector ID to the writer
+func (s *Storage) writeVectorID(w io.Writer, id uint64) error {
+	if err := binary.Write(w, binary.LittleEndian, id); err != nil {
+		return fmt.Errorf("failed to write vector ID: %w", err)
+	}
+	return nil
+}
+
+// writeVectorData writes the vector data to the writer
+func (s *Storage) writeVectorData(w io.Writer, vector []float32) error {
+	if err := binary.Write(w, binary.LittleEndian, vector); err != nil {
+		return fmt.Errorf("failed to write vector data: %w", err)
+	}
+	return nil
+}
+
 func (s *Storage) WriteVector(id uint64, vector []float32) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -545,12 +561,12 @@ func (s *Storage) WriteVector(id uint64, vector []float32) error {
 	}
 
 	// Write ID (8 bytes)
-	if err := binary.Write(s.file, binary.LittleEndian, id); err != nil {
+	if err := s.writeVectorID(s.file, id); err != nil {
 		return err
 	}
 
 	// Write vector data (dimension is stored in index metadata, not per-record)
-	if err := binary.Write(s.file, binary.LittleEndian, vector); err != nil {
+	if err := s.writeVectorData(s.file, vector); err != nil {
 		return err
 	}
 

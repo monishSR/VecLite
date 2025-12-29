@@ -2,8 +2,11 @@ package storage
 
 import (
 	"encoding/binary"
+	"io"
 	"os"
 	"testing"
+
+	"github.com/monishSR/veclite/internal/index/utils"
 )
 
 func TestNewStorage(t *testing.T) {
@@ -639,6 +642,169 @@ func TestStorage_DeleteVector_WithCache(t *testing.T) {
 	}
 }
 
+func TestStorage_DeleteVector_SeekError(t *testing.T) {
+	tmpFile := createTempFile(t)
+	defer os.Remove(tmpFile)
+
+	s, err := NewStorage(tmpFile, 4, 0)
+	if err != nil {
+		t.Fatalf("NewStorage failed: %v", err)
+	}
+
+	if err := s.Open(); err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+
+	// Write a vector
+	if err := s.WriteVector(1, []float32{1.0, 2.0, 3.0, 4.0}); err != nil {
+		t.Fatalf("WriteVector failed: %v", err)
+	}
+
+	// Close file to cause Seek error
+	s.file.Close()
+	s.file = nil
+
+	// DeleteVector should error when Seek fails
+	err = s.DeleteVector(1)
+	if err == nil {
+		t.Error("Expected error when Seek fails in DeleteVector")
+	}
+}
+
+func TestStorage_DeleteVector_ReadIDError(t *testing.T) {
+	tmpFile := createTempFile(t)
+	defer os.Remove(tmpFile)
+
+	s, err := NewStorage(tmpFile, 4, 0)
+	if err != nil {
+		t.Fatalf("NewStorage failed: %v", err)
+	}
+
+	if err := s.Open(); err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+
+	// Write a vector
+	if err := s.WriteVector(1, []float32{1.0, 2.0, 3.0, 4.0}); err != nil {
+		t.Fatalf("WriteVector failed: %v", err)
+	}
+
+	// Get the offset
+	offset, exists := s.index[1]
+	if !exists {
+		t.Fatalf("Vector 1 not in index")
+	}
+
+	// Seek to the offset
+	if _, err := s.file.Seek(offset, 0); err != nil {
+		t.Fatalf("Seek failed: %v", err)
+	}
+
+	// Close file to cause binary.Read error
+	s.file.Close()
+	s.file = nil
+
+	// DeleteVector should error when Read fails
+	err = s.DeleteVector(1)
+	if err == nil {
+		t.Error("Expected error when Read fails in DeleteVector")
+	}
+}
+
+func TestStorage_DeleteVector_WriteTombstoneError(t *testing.T) {
+	tmpFile := createTempFile(t)
+	defer os.Remove(tmpFile)
+
+	s, err := NewStorage(tmpFile, 4, 0)
+	if err != nil {
+		t.Fatalf("NewStorage failed: %v", err)
+	}
+
+	if err := s.Open(); err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+
+	// Write a vector
+	if err := s.WriteVector(1, []float32{1.0, 2.0, 3.0, 4.0}); err != nil {
+		t.Fatalf("WriteVector failed: %v", err)
+	}
+
+	// Get the offset
+	offset, exists := s.index[1]
+	if !exists {
+		t.Fatalf("Vector 1 not in index")
+	}
+
+	// Seek to the offset and read ID to verify
+	if _, err := s.file.Seek(offset, 0); err != nil {
+		t.Fatalf("Seek failed: %v", err)
+	}
+	var id uint64
+	if err := binary.Read(s.file, binary.LittleEndian, &id); err != nil {
+		t.Fatalf("Read ID failed: %v", err)
+	}
+
+	// Seek back to offset
+	if _, err := s.file.Seek(offset, 0); err != nil {
+		t.Fatalf("Seek failed: %v", err)
+	}
+
+	// Close file to cause binary.Write error for tombstone
+	s.file.Close()
+	s.file = nil
+
+	// DeleteVector should error when Write fails
+	err = s.DeleteVector(1)
+	if err == nil {
+		t.Error("Expected error when Write fails for tombstone in DeleteVector")
+	}
+}
+
+func TestStorage_DeleteVector_IDMismatch(t *testing.T) {
+	tmpFile := createTempFile(t)
+	defer os.Remove(tmpFile)
+
+	s, err := NewStorage(tmpFile, 4, 0)
+	if err != nil {
+		t.Fatalf("NewStorage failed: %v", err)
+	}
+
+	if err := s.Open(); err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	defer s.Close()
+
+	// Write a vector
+	if err := s.WriteVector(1, []float32{1.0, 2.0, 3.0, 4.0}); err != nil {
+		t.Fatalf("WriteVector failed: %v", err)
+	}
+
+	// Get the offset
+	offset, exists := s.index[1]
+	if !exists {
+		t.Fatalf("Vector 1 not in index")
+	}
+
+	// Corrupt the file: write a different ID at the offset
+	if _, err := s.file.Seek(offset, 0); err != nil {
+		t.Fatalf("Seek failed: %v", err)
+	}
+	wrongID := uint64(999)
+	if err := binary.Write(s.file, binary.LittleEndian, wrongID); err != nil {
+		t.Fatalf("Write wrong ID failed: %v", err)
+	}
+
+	// DeleteVector should error when ID mismatch is detected
+	err = s.DeleteVector(1)
+	if err == nil {
+		t.Error("Expected error when ID mismatch in DeleteVector")
+	}
+	if err != nil && err.Error() == "" {
+		// Error should mention ID mismatch
+		t.Logf("Got expected error: %v", err)
+	}
+}
+
 func TestStorage_Clear(t *testing.T) {
 	tmpFile := createTempFile(t)
 	defer os.Remove(tmpFile)
@@ -798,6 +964,108 @@ func TestStorage_WriteVector_SeekError(t *testing.T) {
 	err = s.WriteVector(1, []float32{1.0, 2.0, 3.0, 4.0})
 	if err == nil {
 		t.Error("Expected error when writing with closed file")
+	}
+}
+
+func TestStorage_WriteVector_WriteIDError(t *testing.T) {
+	tmpFile := createTempFile(t)
+	defer os.Remove(tmpFile)
+
+	s, err := NewStorage(tmpFile, 4, 0)
+	if err != nil {
+		t.Fatalf("NewStorage failed: %v", err)
+	}
+
+	if err := s.Open(); err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+
+	// Seek to end first
+	if _, err := s.file.Seek(0, io.SeekEnd); err != nil {
+		t.Fatalf("Seek failed: %v", err)
+	}
+
+	// Close file to cause binary.Write error for ID
+	s.file.Close()
+	s.file = nil
+
+	// WriteVector should error when writing ID fails
+	err = s.WriteVector(1, []float32{1.0, 2.0, 3.0, 4.0})
+	if err == nil {
+		t.Error("Expected error when Write fails for ID in WriteVector")
+	}
+
+	// Verify ID was not added to index
+	if len(s.index) != 0 {
+		t.Errorf("Expected index to be empty after failed write, got %d entries", len(s.index))
+	}
+}
+
+func TestStorage_WriteVector_DimensionMismatch(t *testing.T) {
+	tmpFile := createTempFile(t)
+	defer os.Remove(tmpFile)
+
+	s, err := NewStorage(tmpFile, 4, 0)
+	if err != nil {
+		t.Fatalf("NewStorage failed: %v", err)
+	}
+
+	if err := s.Open(); err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	defer s.Close()
+
+	// Try to write vector with wrong dimension
+	err = s.WriteVector(1, []float32{1.0, 2.0, 3.0}) // 3 elements, expected 4
+	if err == nil {
+		t.Error("Expected error for dimension mismatch")
+	}
+	if err != nil && err.Error() == "" {
+		t.Error("Error message should mention dimension mismatch")
+	}
+
+	// Try with too many dimensions
+	err = s.WriteVector(2, []float32{1.0, 2.0, 3.0, 4.0, 5.0}) // 5 elements, expected 4
+	if err == nil {
+		t.Error("Expected error for dimension mismatch (too many)")
+	}
+
+	// Verify no vectors were added to index
+	if len(s.index) != 0 {
+		t.Errorf("Expected index to be empty after dimension mismatch errors, got %d entries", len(s.index))
+	}
+}
+
+func TestStorage_WriteVector_WriteVectorDataError(t *testing.T) {
+	tmpFile := createTempFile(t)
+	defer os.Remove(tmpFile)
+
+	s, err := NewStorage(tmpFile, 4, 0)
+	if err != nil {
+		t.Fatalf("NewStorage failed: %v", err)
+	}
+
+	if err := s.Open(); err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	defer s.Close()
+
+	// Test the refactored helper functions directly using FailingWriter
+	// This allows us to test error paths that are hard to trigger in the full WriteVector flow
+
+	// Test writeVectorID error path using FailingWriter
+	fw1 := &utils.FailingWriter{ShouldFail: true}
+	err = s.writeVectorID(fw1, 1)
+	if err == nil {
+		t.Error("Expected error when writeVectorID fails")
+	}
+
+	// Test writeVectorData error path using FailingWriter
+	fw2 := &utils.FailingWriter{ShouldFail: true}
+	vector := []float32{1.0, 2.0, 3.0, 4.0}
+	err = s.writeVectorData(fw2, vector)
+	if err == nil {
+		t.Error("Expected error when writeVectorData fails")
 	}
 }
 

@@ -584,6 +584,242 @@ func TestFlatIndex_OpenFlatIndex_DimensionMismatch(t *testing.T) {
 	}
 }
 
+// Error path tests for storage operation failures
+func TestFlatIndex_Insert_WriteVectorError(t *testing.T) {
+	tmpFile := createTempFile(t)
+	defer os.Remove(tmpFile)
+
+	store, err := storage.NewStorage(tmpFile, 128, 0)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	if err := store.Open(); err != nil {
+		t.Fatalf("Failed to open storage: %v", err)
+	}
+
+	index := NewFlatIndex(128, store)
+
+	// Close storage file to cause WriteVector to fail
+	store.Close()
+
+	// Insert should error when WriteVector fails
+	vector := make([]float32, 128)
+	err = index.Insert(1, vector)
+	if err == nil {
+		t.Error("Expected error when WriteVector fails")
+	}
+
+	// Verify ID was not added to index
+	if index.Size() != 0 {
+		t.Errorf("Expected size 0 after failed insert, got %d", index.Size())
+	}
+}
+
+func TestFlatIndex_Delete_DeleteVectorError(t *testing.T) {
+	tmpFile := createTempFile(t)
+	defer os.Remove(tmpFile)
+
+	store, err := storage.NewStorage(tmpFile, 128, 0)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	if err := store.Open(); err != nil {
+		t.Fatalf("Failed to open storage: %v", err)
+	}
+
+	index := NewFlatIndex(128, store)
+
+	// Insert a vector first
+	vector := make([]float32, 128)
+	if err := index.Insert(1, vector); err != nil {
+		t.Fatalf("Failed to insert: %v", err)
+	}
+
+	// Close storage file to cause DeleteVector to fail
+	store.Close()
+
+	// Delete should error when DeleteVector fails
+	// Note: Delete removes ID from index first, then calls DeleteVector
+	// So the ID will be removed from index even if DeleteVector fails
+	err = index.Delete(1)
+	if err == nil {
+		t.Error("Expected error when DeleteVector fails")
+	}
+
+	// Verify ID was removed from index (Delete removes it before calling DeleteVector)
+	if index.Size() != 0 {
+		t.Errorf("Expected size 0 after delete, got %d", index.Size())
+	}
+}
+
+func TestFlatIndex_Clear_StorageClearError(t *testing.T) {
+	tmpFile := createTempFile(t)
+	defer os.Remove(tmpFile)
+
+	store, err := storage.NewStorage(tmpFile, 128, 0)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	if err := store.Open(); err != nil {
+		t.Fatalf("Failed to open storage: %v", err)
+	}
+
+	index := NewFlatIndex(128, store)
+
+	// Insert some vectors
+	for i := uint64(1); i <= 3; i++ {
+		vector := make([]float32, 128)
+		if err := index.Insert(i, vector); err != nil {
+			t.Fatalf("Failed to insert vector %d: %v", i, err)
+		}
+	}
+
+	// Close storage file to cause Clear to fail
+	store.Close()
+
+	// Clear should error when storage.Clear fails
+	err = index.Clear()
+	if err == nil {
+		t.Error("Expected error when storage.Clear fails")
+	}
+
+	// Note: Clear() clears IDs map before calling storage.Clear(),
+	// so even if storage.Clear fails, the IDs are already cleared.
+	// This is the expected behavior - the test verifies that Clear returns an error.
+}
+
+func TestFlatIndex_OpenFlatIndex_ReadAllVectorsError(t *testing.T) {
+	tmpFile := createTempFile(t)
+	defer os.Remove(tmpFile)
+
+	// Create storage but don't open it
+	store, err := storage.NewStorage(tmpFile, 3, 0)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+
+	// Try to open flat index with unopened storage
+	// This should fail because ReadAllVectors requires storage to be open
+	_, err = OpenFlatIndex(3, store)
+	if err == nil {
+		t.Error("Expected error when opening with unopened storage")
+	}
+}
+
+func TestFlatIndex_OpenFlatIndex_ReadAllVectorsEmpty(t *testing.T) {
+	tmpFile := createTempFile(t)
+	defer os.Remove(tmpFile)
+
+	store, err := storage.NewStorage(tmpFile, 3, 0)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	if err := store.Open(); err != nil {
+		t.Fatalf("Failed to open storage: %v", err)
+	}
+	defer store.Close()
+
+	// Open flat index from empty storage
+	index, err := OpenFlatIndex(3, store)
+	if err != nil {
+		t.Fatalf("OpenFlatIndex should succeed with empty storage: %v", err)
+	}
+
+	// Verify index is empty
+	if index.Size() != 0 {
+		t.Errorf("Expected size 0 for empty storage, got %d", index.Size())
+	}
+}
+
+func TestFlatIndex_Insert_StorageNotOpen(t *testing.T) {
+	tmpFile := createTempFile(t)
+	defer os.Remove(tmpFile)
+
+	store, err := storage.NewStorage(tmpFile, 128, 0)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	// Don't open storage
+
+	index := NewFlatIndex(128, store)
+
+	// Insert should error when storage is not open
+	vector := make([]float32, 128)
+	err = index.Insert(1, vector)
+	if err == nil {
+		t.Error("Expected error when storage is not open")
+	}
+}
+
+func TestFlatIndex_Search_ReadVectorError(t *testing.T) {
+	tmpFile := createTempFile(t)
+	defer os.Remove(tmpFile)
+
+	store, err := storage.NewStorage(tmpFile, 128, 0)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	if err := store.Open(); err != nil {
+		t.Fatalf("Failed to open storage: %v", err)
+	}
+	defer store.Close()
+
+	index := NewFlatIndex(128, store)
+
+	// Insert a vector
+	vector := make([]float32, 128)
+	if err := index.Insert(1, vector); err != nil {
+		t.Fatalf("Failed to insert: %v", err)
+	}
+
+	// Close storage file to cause ReadVector to fail
+	store.Close()
+
+	// Search should handle ReadVector errors gracefully (it logs and continues)
+	// Since we only have one vector and it fails to read, we should get 0 results
+	query := make([]float32, 128)
+	results, err := index.Search(query, 5)
+	if err != nil {
+		t.Fatalf("Search should not error even when ReadVector fails: %v", err)
+	}
+
+	// Should return 0 results since ReadVector failed
+	if len(results) != 0 {
+		t.Errorf("Expected 0 results when ReadVector fails, got %d", len(results))
+	}
+}
+
+func TestFlatIndex_ReadVector_StorageReadError(t *testing.T) {
+	tmpFile := createTempFile(t)
+	defer os.Remove(tmpFile)
+
+	store, err := storage.NewStorage(tmpFile, 128, 0)
+	if err != nil {
+		t.Fatalf("Failed to create storage: %v", err)
+	}
+	if err := store.Open(); err != nil {
+		t.Fatalf("Failed to open storage: %v", err)
+	}
+
+	index := NewFlatIndex(128, store)
+
+	// Insert a vector
+	vector := make([]float32, 128)
+	if err := index.Insert(1, vector); err != nil {
+		t.Fatalf("Failed to insert: %v", err)
+	}
+
+	// Close storage file to cause ReadVector to fail
+	store.Close()
+
+	// ReadVector should error when storage.ReadVector fails
+	_, err = index.ReadVector(1)
+	if err == nil {
+		t.Error("Expected error when storage.ReadVector fails")
+	}
+}
+
+
 // Helper function to create a temporary file
 func createTempFile(t *testing.T) string {
 	tmpFile, err := os.CreateTemp("", "veclite_test_*.db")

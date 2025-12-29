@@ -10,6 +10,92 @@ import (
 	"github.com/monishSR/veclite/internal/storage"
 )
 
+// writeGraphHeader writes the graph file header (magic, version, parameters, metadata)
+func (h *HNSWIndex) writeGraphHeader(w io.Writer) error {
+	// Write magic number for validation
+	magic := uint32(0x48534E57) // "HNSW" in ASCII
+	if err := binary.Write(w, binary.LittleEndian, magic); err != nil {
+		return fmt.Errorf("failed to write magic number: %w", err)
+	}
+
+	// Write version (for future compatibility)
+	version := uint32(1)
+	if err := binary.Write(w, binary.LittleEndian, version); err != nil {
+		return fmt.Errorf("failed to write version: %w", err)
+	}
+
+	// Write parameters
+	if err := binary.Write(w, binary.LittleEndian, uint32(h.dimension)); err != nil {
+		return fmt.Errorf("failed to write dimension: %w", err)
+	}
+	if err := binary.Write(w, binary.LittleEndian, uint32(h.M)); err != nil {
+		return fmt.Errorf("failed to write M: %w", err)
+	}
+	if err := binary.Write(w, binary.LittleEndian, uint32(h.efConstruction)); err != nil {
+		return fmt.Errorf("failed to write efConstruction: %w", err)
+	}
+	if err := binary.Write(w, binary.LittleEndian, uint32(h.efSearch)); err != nil {
+		return fmt.Errorf("failed to write efSearch: %w", err)
+	}
+	if err := binary.Write(w, binary.LittleEndian, h.mL); err != nil {
+		return fmt.Errorf("failed to write mL: %w", err)
+	}
+
+	// Write graph metadata
+	if err := binary.Write(w, binary.LittleEndian, h.entryPoint); err != nil {
+		return fmt.Errorf("failed to write entry point: %w", err)
+	}
+	if err := binary.Write(w, binary.LittleEndian, int32(h.maxLevel)); err != nil {
+		return fmt.Errorf("failed to write max level: %w", err)
+	}
+	if err := binary.Write(w, binary.LittleEndian, uint32(len(h.nodes))); err != nil {
+		return fmt.Errorf("failed to write node count: %w", err)
+	}
+
+	return nil
+}
+
+// writeGraphNode writes a single node and its neighbors to the writer
+func (h *HNSWIndex) writeGraphNode(w io.Writer, id uint64, node *HNSWNode) error {
+	// Write node ID
+	if err := binary.Write(w, binary.LittleEndian, id); err != nil {
+		return fmt.Errorf("failed to write node ID %d: %w", id, err)
+	}
+
+	// Write node level
+	if err := binary.Write(w, binary.LittleEndian, int32(node.Level)); err != nil {
+		return fmt.Errorf("failed to write node level for node %d: %w", id, err)
+	}
+
+	// Write neighbors for each level (0 to node.Level)
+	for level := 0; level <= node.Level; level++ {
+		neighbors := node.Neighbors[level]
+		if err := binary.Write(w, binary.LittleEndian, int32(level)); err != nil {
+			return fmt.Errorf("failed to write level %d for node %d: %w", level, id, err)
+		}
+		if err := binary.Write(w, binary.LittleEndian, uint32(len(neighbors))); err != nil {
+			return fmt.Errorf("failed to write neighbor count for node %d level %d: %w", id, level, err)
+		}
+		for _, neighborID := range neighbors {
+			if err := binary.Write(w, binary.LittleEndian, neighborID); err != nil {
+				return fmt.Errorf("failed to write neighbor %d for node %d level %d: %w", neighborID, id, level, err)
+			}
+		}
+	}
+
+	return nil
+}
+
+// writeGraphNodes writes all nodes to the writer
+func (h *HNSWIndex) writeGraphNodes(w io.Writer) error {
+	for id, node := range h.nodes {
+		if err := h.writeGraphNode(w, id, node); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // SaveGraph saves the HNSW graph structure to disk
 // Graph file path is automatically derived from storage file path by appending ".graph"
 func (h *HNSWIndex) SaveGraph() error {
@@ -27,73 +113,14 @@ func (h *HNSWIndex) SaveGraph() error {
 	}
 	defer file.Close()
 
-	// Write magic number for validation
-	magic := uint32(0x48534E57) // "HNSW" in ASCII
-	if err := binary.Write(file, binary.LittleEndian, magic); err != nil {
+	// Write header (magic, version, parameters, metadata)
+	if err := h.writeGraphHeader(file); err != nil {
 		return err
 	}
 
-	// Write version (for future compatibility)
-	version := uint32(1)
-	if err := binary.Write(file, binary.LittleEndian, version); err != nil {
+	// Write all nodes
+	if err := h.writeGraphNodes(file); err != nil {
 		return err
-	}
-
-	// Write parameters
-	if err := binary.Write(file, binary.LittleEndian, uint32(h.dimension)); err != nil {
-		return err
-	}
-	if err := binary.Write(file, binary.LittleEndian, uint32(h.M)); err != nil {
-		return err
-	}
-	if err := binary.Write(file, binary.LittleEndian, uint32(h.efConstruction)); err != nil {
-		return err
-	}
-	if err := binary.Write(file, binary.LittleEndian, uint32(h.efSearch)); err != nil {
-		return err
-	}
-	if err := binary.Write(file, binary.LittleEndian, h.mL); err != nil {
-		return err
-	}
-
-	// Write graph metadata
-	if err := binary.Write(file, binary.LittleEndian, h.entryPoint); err != nil {
-		return err
-	}
-	if err := binary.Write(file, binary.LittleEndian, int32(h.maxLevel)); err != nil {
-		return err
-	}
-	if err := binary.Write(file, binary.LittleEndian, uint32(len(h.nodes))); err != nil {
-		return err
-	}
-
-	// Write each node
-	for id, node := range h.nodes {
-		// Write node ID
-		if err := binary.Write(file, binary.LittleEndian, id); err != nil {
-			return err
-		}
-
-		// Write node level
-		if err := binary.Write(file, binary.LittleEndian, int32(node.Level)); err != nil {
-			return err
-		}
-
-		// Write neighbors for each level (0 to node.Level)
-		for level := 0; level <= node.Level; level++ {
-			neighbors := node.Neighbors[level]
-			if err := binary.Write(file, binary.LittleEndian, int32(level)); err != nil {
-				return err
-			}
-			if err := binary.Write(file, binary.LittleEndian, uint32(len(neighbors))); err != nil {
-				return err
-			}
-			for _, neighborID := range neighbors {
-				if err := binary.Write(file, binary.LittleEndian, neighborID); err != nil {
-					return err
-				}
-			}
-		}
 	}
 
 	return nil
