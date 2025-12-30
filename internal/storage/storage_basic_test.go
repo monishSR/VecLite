@@ -506,6 +506,48 @@ func TestStorage_GetFilePath(t *testing.T) {
 	}
 }
 
+func TestStorage_GetDimension(t *testing.T) {
+	tmpFile := createTempFile(t)
+	defer os.Remove(tmpFile)
+
+	// Test with different dimensions
+	testCases := []struct {
+		name      string
+		dimension int
+	}{
+		{"Dimension 4", 4},
+		{"Dimension 128", 128},
+		{"Dimension 256", 256},
+		{"Dimension 512", 512},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			s, err := NewStorage(tmpFile, tc.dimension, 0)
+			if err != nil {
+				t.Fatalf("NewStorage failed: %v", err)
+			}
+
+			// Test before opening
+			dim := s.GetDimension()
+			if dim != tc.dimension {
+				t.Errorf("Expected dimension %d, got %d", tc.dimension, dim)
+			}
+
+			// Test after opening
+			if err := s.Open(); err != nil {
+				t.Fatalf("Open failed: %v", err)
+			}
+			defer s.Close()
+
+			dim = s.GetDimension()
+			if dim != tc.dimension {
+				t.Errorf("Expected dimension %d after open, got %d", tc.dimension, dim)
+			}
+		})
+	}
+}
+
 func TestStorage_NewStorage_WithCache(t *testing.T) {
 	tmpFile := createTempFile(t)
 	defer os.Remove(tmpFile)
