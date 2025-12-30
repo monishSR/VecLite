@@ -824,6 +824,11 @@ func (s *Storage) GetFilePath() string {
 	return s.filePath
 }
 
+// GetDimension returns the dimension of vectors in this storage
+func (s *Storage) GetDimension() int {
+	return s.dimension
+}
+
 // Sync flushes data to disk and saves the index
 func (s *Storage) Sync() error {
 	s.mu.Lock()

@@ -35,7 +35,7 @@ func main() {
     // Create database
     config := veclite.DefaultConfig()
     config.Dimension = 128
-    config.IndexType = "hnsw"  // or "flat" for exact search
+    config.IndexType = "hnsw"  // or "flat" for exact search, "ivf" for very large datasets
     config.DataPath = "./vectors.db"
     
     db, _ := veclite.New(config)
@@ -79,8 +79,13 @@ VecLite/
 │   │   │   ├── hnsw.go    # Core HNSW implementation
 │   │   │   ├── graph.go   # Graph persistence operations
 │   │   │   └── hnsw_test.go
-│   │   └── ivf/          # IVF (Inverted File) index (planned)
-│   │       └── ivf.go
+│   │   └── ivf/          # IVF (Inverted File) index
+│   │       ├── ivf.go    # Core IVF implementation
+│   │       ├── centroid.go # Centroid management
+│   │       ├── ivf_persistence.go # IVF persistence operations
+│   │       ├── ivf_test.go
+│   │       ├── centroid_test.go
+│   │       └── ivf_persistence_test.go
 │   ├── storage/          # Persistent storage layer
 │   │   ├── storage.go
 │   │   └── storage_test.go
@@ -102,11 +107,11 @@ VecLite/
 
 ## Features
 
-- **Multiple Index Types**: Support for Flat and HNSW indexes (IVF planned)
+- **Multiple Index Types**: Support for Flat, HNSW, and IVF indexes
 - **Vector Operations**: L2 distance, cosine distance, dot product, normalization
 - **Persistent Storage**: On-disk storage with efficient ID-to-offset indexing and LRU cache
 - **Thread-Safe**: Concurrent read operations with exclusive write locking
-- **Memory Efficient**: Vectors stored on disk, only graph structure in memory (HNSW)
+- **Memory Efficient**: Vectors stored on disk, only index structure in memory
 - **Embedded**: Single binary, minimal external dependencies
 
 ## Concurrency Model
@@ -166,18 +171,21 @@ make example
 
 ## Index Comparison
 
-| Feature | Flat Index | HNSW Index |
-|---------|-----------|------------|
-| **Search Type** | Exact (100% recall) | Approximate (high recall) |
-| **Search Complexity** | O(n) - linear scan | O(log n) - sub-linear |
-| **Best For** | Small datasets (<10K) | Large datasets (100K+) |
-| **Memory Usage** | Low (only IDs) | Low (graph structure only) |
-| **Insert Speed** | Fast (~0.035 ms) | Slower (~0.275 ms) |
-| **Search Speed (10K)** | ~85 ms (random) | ~66 ms (clustered) |
-| **Search Speed (100K+)** | Slow (linear) | Fast (sub-linear) |
-| **Use Case** | Exact results needed | Speed prioritized |
+| Feature | Flat Index | HNSW Index | IVF Index |
+|---------|-----------|------------|-----------|
+| **Search Type** | Exact (100% recall) | Approximate (high recall) | Approximate (high recall) |
+| **Search Complexity** | O(n) - linear scan | O(log n) - sub-linear | O(n/k) - cluster-based |
+| **Best For** | Small datasets (<10K) | Large datasets (100K+) | Very large datasets (1M+) |
+| **Memory Usage** | Low (only IDs) | Low (graph structure only) | Low (cluster structure only) |
+| **Insert Speed** | Fast (~0.021 ms) | Slower (~4.62 ms) | Medium (~0.094 ms) |
+| **Search Speed (10K, clustered)** | ~62.9 ms | ~0.88 ms | ~7.79 ms |
+| **Search Speed (100K+)** | Slow (linear) | Fast (sub-linear) | Fast (cluster-based) |
+| **Use Case** | Exact results needed | Speed prioritized | Very large datasets |
 
-**Recommendation**: Use **Flat** for small datasets requiring exact results. Use **HNSW** for larger datasets where approximate search is acceptable.
+**Recommendation**: 
+- Use **Flat** for small datasets (<10K) requiring exact results
+- Use **HNSW** for large datasets (100K+) where speed is critical
+- Use **IVF** for very large datasets (1M+) with clustered data
 
 ## Index Types
 
@@ -188,6 +196,10 @@ A brute-force search implementation providing **exact nearest neighbor search** 
 ### HNSW Index
 
 A state-of-the-art approximate nearest neighbor search algorithm with **sub-linear search complexity**. Builds a multi-layer graph structure where each layer is a small-world network, enabling fast navigation from entry points to nearest neighbors. Memory-efficient (only graph structure in memory, vectors on disk), optimized for large datasets (100K+ vectors), and includes CPU optimizations for better performance. Configurable via `M`, `efConstruction`, and `efSearch` parameters.
+
+### IVF Index
+
+An **Inverted File** index optimized for very large datasets (1M+ vectors). Uses cluster-based search where vectors are organized into clusters with centroids. During search, only the `nProbe` nearest clusters are examined, significantly reducing the search space. Memory-efficient (only cluster structure and centroids in memory, vectors on disk), ideal for datasets with natural clustering. Configurable via `NClusters` (number of clusters, typically √N) and `NProbe` (number of clusters to search, typically 1-10). Best performance on structured/clustered data.
 
 ## Roadmap
 
@@ -200,8 +212,12 @@ A state-of-the-art approximate nearest neighbor search algorithm with **sub-line
 - Comprehensive test coverage
 - Performance benchmarks
 
-### 🚧 In Progress (v0.2)
+### ✅ Completed (v0.2)
 - IVF (Inverted File) index for very large datasets
+- IVF persistence and loading
+- Comprehensive IVF test coverage
+
+### 🚧 In Progress (v0.3)
 - Async index updates for non-blocking writes
 - Query optimization improvements
 
@@ -234,21 +250,30 @@ go test ./pkg/veclite -bench=. -benchtime=5s -run='^$'
 
 ### Available Benchmarks
 
-- **Insert Benchmarks**: `BenchmarkInsert_Flat`, `BenchmarkInsert_HNSW`
+- **Insert Benchmarks**: `BenchmarkInsert_Flat`, `BenchmarkInsert_HNSW`, `BenchmarkInsert_IVF`
 - **Search Benchmarks**: 
-  - Small dataset (10K): `BenchmarkSearch_Flat`, `BenchmarkSearch_HNSW`
-  - Large dataset (100K): `BenchmarkSearch_Flat_LargeDataset`, `BenchmarkSearch_HNSW_LargeDataset`
+  - Small dataset (10K): `BenchmarkSearch_Flat`, `BenchmarkSearch_HNSW`, `BenchmarkSearch_IVF`
+  - Clustered data: `BenchmarkSearch_Flat_Clustered`, `BenchmarkSearch_HNSW_Clustered`, `BenchmarkSearch_IVF_Clustered`
+  - Large dataset (100K): `BenchmarkSearch_Flat_LargeDataset`, `BenchmarkSearch_HNSW_LargeDataset`, `BenchmarkSearch_IVF_LargeDataset`
   - Very large dataset (1M): `BenchmarkSearch_Flat_VeryLargeDataset`, `BenchmarkSearch_HNSW_VeryLargeDataset`
-- **Read Benchmarks**: `BenchmarkRead_Flat`, `BenchmarkRead_HNSW`
+- **Read Benchmarks**: `BenchmarkRead_Flat`, `BenchmarkRead_HNSW`, `BenchmarkRead_IVF`
 
 ### Benchmark Configuration
 
-The benchmarks use the following HNSW parameters for optimal performance:
+The benchmarks use the following parameters for optimal performance:
+
+**HNSW:**
 - `M = 16`: Maximum connections per node
 - `EfConstruction = 64`: Search width during construction (reduced from default 200 for faster insertion)
 - `EfSearch = 10`: Search width during query (optimized for smaller datasets)
 
-Note: For production use with large datasets, you may want to increase `EfConstruction` to 200 and `EfSearch` to 50-100 for better search quality.
+**IVF:**
+- `NClusters = 100`: Number of clusters (√N for 10K vectors, √N for larger datasets)
+- `NProbe = 10`: Number of clusters to search (higher = better recall, slower search)
+
+Note: For production use with large datasets, you may want to:
+- HNSW: Increase `EfConstruction` to 200 and `EfSearch` to 50-100 for better search quality
+- IVF: Adjust `NClusters` to √N and `NProbe` based on recall requirements (1-10 typical)
 
 ### Quick Benchmarks
 
@@ -257,18 +282,27 @@ Performance on 10,000 vectors (128 dimensions):
 ```
 Operation          | Index | Time/Op      | Speedup
 -------------------|-------|--------------|--------
-Insert             | Flat  | ~0.035 ms    | Baseline
-Insert             | HNSW  | ~0.275 ms    | 7.8x slower
-Search (Clustered) | Flat  | ~145.4 ms    | Baseline
-Search (Clustered) | HNSW  | ~65.8 ms     | 2.2x faster ⚡
-Read               | Both  | ~2.0 ms      | Same (shared storage)
+Insert             | Flat  | ~0.021 ms    | Baseline
+Insert             | HNSW  | ~4.62 ms     | 220x slower
+Insert             | IVF   | ~0.094 ms    | 4.5x slower
+Search (Clustered) | Flat  | ~62.9 ms     | Baseline
+Search (Clustered) | HNSW  | ~0.88 ms     | 71x faster ⚡
+Search (Clustered) | IVF   | ~7.79 ms     | 8.1x faster ⚡
+Read               | Flat  | ~0.006 ms    | Baseline
+Read               | IVF   | ~0.010 ms    | 1.6x slower (shared storage)
 ```
 
-**Key Insight**: HNSW excels on structured data (real embeddings) - **2.2x faster search** than Flat. On random data, performance is similar due to poor graph structure.
+**Key Insights**: 
+- **HNSW** excels on structured data - **71x faster search** than Flat on clustered data
+- **IVF** provides good balance - **8.1x faster** than Flat, faster insert than HNSW
+- **Insert**: Flat is fastest, IVF is 4.5x slower but much faster than HNSW
+- **Search**: HNSW is fastest, IVF is competitive and much faster than Flat
 
-**Test Environment**: 10K vectors, 128 dims, M=16, EfConstruction=64, EfSearch=10, 50 Gaussian clusters
+**Test Environment**: 10K vectors, 128 dims, clustered data (50 Gaussian clusters)
+- HNSW: M=16, EfConstruction=64, EfSearch=10
+- IVF: NClusters=100, NProbe=10
 
-*For production with real embeddings, HNSW advantage increases on larger datasets (100K+ vectors).*
+*For production with real embeddings, HNSW advantage increases on larger datasets (100K+ vectors). IVF is ideal for very large datasets (1M+ vectors) with natural clustering.*
 
 ## Installation
 

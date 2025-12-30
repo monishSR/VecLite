@@ -63,6 +63,15 @@ func NewIndex(indexType IndexType, dimension int, config map[string]any, storage
 		}
 		return flat.NewFlatIndex(dimension, storage), nil
 	case IndexTypeIVF:
+		// Check if IVF file exists - if so, open existing index
+		if storage != nil {
+			ivfPath := storage.GetFilePath() + ".ivf"
+			if _, err := os.Stat(ivfPath); err == nil {
+				// IVF file exists, open existing index
+				return ivf.OpenIVFIndex(storage)
+			}
+		}
+		// No existing IVF file, create new index
 		return ivf.NewIVFIndex(dimension, config, storage)
 	default:
 		return nil, errors.New("unknown index type")

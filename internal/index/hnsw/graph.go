@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-
-	"github.com/monishSR/veclite/internal/storage"
 )
 
 // writeGraphHeader writes the graph file header (magic, version, parameters, metadata)
@@ -261,28 +259,4 @@ func (h *HNSWIndex) LoadGraph() error {
 
 	h.size = len(h.nodes)
 	return nil
-}
-
-// OpenHNSWIndex opens an existing HNSW index and loads the graph structure from disk
-// All parameters (dimension, M, efConstruction, efSearch, mL) are loaded from the graph file
-// Graph file path is automatically derived from storage file path by appending ".graph"
-// If graph file doesn't exist, returns an error (use NewHNSWIndex for new indexes)
-func OpenHNSWIndex(storage *storage.Storage) (*HNSWIndex, error) {
-	if storage == nil {
-		return nil, errors.New("storage is required for OpenHNSWIndex")
-	}
-
-	// Create a minimal index structure - parameters will be loaded from graph file
-	h := &HNSWIndex{
-		storage: storage,
-		nodes:   make(map[uint64]*HNSWNode),
-		config:  make(map[string]any),
-	}
-
-	// Load graph from disk (this will populate all parameters)
-	if err := h.LoadGraph(); err != nil {
-		return nil, fmt.Errorf("failed to load graph: %w", err)
-	}
-
-	return h, nil
 }

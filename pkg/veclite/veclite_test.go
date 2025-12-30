@@ -26,11 +26,17 @@ func createTestDB(t *testing.T, indexType string) (*VecLite, func()) {
 		config.EfConstruction = 200
 		config.EfSearch = 50
 	}
+	// Set IVF parameters if needed
+	if indexType == "ivf" {
+		config.NClusters = 10
+		config.NProbe = 2
+	}
 
 	db, err := New(config)
 	if err != nil {
 		os.Remove(tmpFile.Name())
 		os.Remove(tmpFile.Name() + ".graph") // Clean up graph file if it exists
+		os.Remove(tmpFile.Name() + ".ivf")   // Clean up IVF file if it exists
 		t.Fatalf("Failed to create database with index type %s: %v", indexType, err)
 	}
 
@@ -38,6 +44,7 @@ func createTestDB(t *testing.T, indexType string) (*VecLite, func()) {
 		db.Close()
 		os.Remove(tmpFile.Name())
 		os.Remove(tmpFile.Name() + ".graph") // Clean up graph file for HNSW
+		os.Remove(tmpFile.Name() + ".ivf")   // Clean up IVF file for IVF
 	}
 
 	return db, cleanup
@@ -45,8 +52,7 @@ func createTestDB(t *testing.T, indexType string) (*VecLite, func()) {
 
 // runTestForAllIndexes runs a test function for all supported index types
 func runTestForAllIndexes(t *testing.T, testFunc func(t *testing.T, indexType string)) {
-	indexTypes := []string{"flat", "hnsw"}
-	// TODO: Add "ivf" when implemented
+	indexTypes := []string{"flat", "hnsw", "ivf"}
 
 	for _, indexType := range indexTypes {
 		t.Run(indexType, func(t *testing.T) {
@@ -450,6 +456,7 @@ func TestVecLite_Open(t *testing.T) {
 	tmpFile.Close()
 	defer os.Remove(tmpFile.Name())
 	defer os.Remove(tmpFile.Name() + ".graph")
+	defer os.Remove(tmpFile.Name() + ".ivf")
 
 	// Create a database first
 	config := DefaultConfig()
@@ -576,6 +583,7 @@ func TestVecLite_New_ErrorCases(t *testing.T) {
 	tmpFile.Close()
 	defer os.Remove(tmpFile.Name())
 	defer os.Remove(tmpFile.Name() + ".graph")
+	defer os.Remove(tmpFile.Name() + ".ivf")
 
 	config = nil
 	// Create a config with a temp file path
@@ -583,7 +591,7 @@ func TestVecLite_New_ErrorCases(t *testing.T) {
 	testConfig.DataPath = tmpFile.Name()
 	testConfig.Dimension = 128
 	testConfig.IndexType = "flat"
-	
+
 	db, err := New(testConfig)
 	if err != nil {
 		t.Fatalf("New with config should work, got error: %v", err)
@@ -629,7 +637,6 @@ func TestVecLite_Search_ErrorCases(t *testing.T) {
 		t.Error("Expected error for negative k")
 	}
 }
-
 
 func TestVecLite_Size(t *testing.T) {
 	runTestForAllIndexes(t, func(t *testing.T, indexType string) {
@@ -715,6 +722,7 @@ func TestVecLite_New_IndexCreationError(t *testing.T) {
 	tmpFile.Close()
 	defer os.Remove(tmpFile.Name())
 	defer os.Remove(tmpFile.Name() + ".graph")
+	defer os.Remove(tmpFile.Name() + ".ivf")
 
 	config := DefaultConfig()
 	config.DataPath = tmpFile.Name()
@@ -736,6 +744,7 @@ func TestVecLite_Close_HNSW_SaveGraphError(t *testing.T) {
 	tmpFile.Close()
 	defer os.Remove(tmpFile.Name())
 	defer os.Remove(tmpFile.Name() + ".graph")
+	defer os.Remove(tmpFile.Name() + ".ivf")
 
 	config := DefaultConfig()
 	config.DataPath = tmpFile.Name()

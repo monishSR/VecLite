@@ -7,6 +7,7 @@ import (
 
 	"github.com/monishSR/veclite/internal/index"
 	"github.com/monishSR/veclite/internal/index/hnsw"
+	"github.com/monishSR/veclite/internal/index/ivf"
 	"github.com/monishSR/veclite/internal/storage"
 )
 
@@ -27,6 +28,8 @@ type Config struct {
 	M              int // HNSW parameter
 	EfConstruction int // HNSW parameter
 	EfSearch       int // HNSW parameter
+	NClusters      int // IVF parameter
+	NProbe         int // IVF parameter
 	CacheCapacity  int // LRU cache capacity (0 = disabled, default: 1000)
 }
 
@@ -71,6 +74,8 @@ func New(config *Config) (*VecLite, error) {
 	indexConfig["MaxElements"] = config.MaxElements
 	indexConfig["EfConstruction"] = config.EfConstruction
 	indexConfig["EfSearch"] = config.EfSearch
+	indexConfig["NClusters"] = config.NClusters
+	indexConfig["NProbe"] = config.NProbe
 
 	// Pass storage to index (indexes can use it or ignore it)
 	idx, err := index.NewIndex(index.IndexType(config.IndexType), config.Dimension, indexConfig, store)
@@ -101,12 +106,21 @@ func (v *VecLite) Close() error {
 	v.mu.Lock() // Exclusive lock - wait for all operations to complete
 	defer v.mu.Unlock()
 
-	// Save HNSW graph if using HNSW index
-	if v.index != nil && v.config.IndexType == "hnsw" {
-		if hnswIndex, ok := v.index.(*hnsw.HNSWIndex); ok {
-			if err := hnswIndex.SaveGraph(); err != nil {
-				// Log error but continue with storage close
-				fmt.Printf("Warning: failed to save HNSW graph: %v\n", err)
+	// Save index structure if needed
+	if v.index != nil {
+		if v.config.IndexType == "hnsw" {
+			if hnswIndex, ok := v.index.(*hnsw.HNSWIndex); ok {
+				if err := hnswIndex.SaveGraph(); err != nil {
+					// Log error but continue with storage close
+					fmt.Printf("Warning: failed to save HNSW graph: %v\n", err)
+				}
+			}
+		} else if v.config.IndexType == "ivf" {
+			if ivfIndex, ok := v.index.(*ivf.IVFIndex); ok {
+				if err := ivfIndex.SaveIVF(); err != nil {
+					// Log error but continue with storage close
+					fmt.Printf("Warning: failed to save IVF index: %v\n", err)
+				}
 			}
 		}
 	}

@@ -252,21 +252,21 @@ func TestNewIndex_Flat_OpenFlatIndexError(t *testing.T) {
 }
 
 func TestNewIndex_IVF(t *testing.T) {
-	// IVF is a placeholder that returns successfully but operations will fail
+	// IVF can be created without storage (but Insert will require storage)
 	config := make(map[string]any)
 	idx, err := NewIndex(IndexTypeIVF, 128, config, nil)
 	if err != nil {
-		t.Fatalf("NewIndex should succeed for IVF (placeholder): %v", err)
+		t.Fatalf("NewIndex should succeed for IVF: %v", err)
 	}
 	if idx == nil {
 		t.Fatal("NewIndex returned nil")
 	}
 
-	// Verify it's an IVF index by checking that operations fail (not implemented)
+	// Insert without storage should fail
 	vector := make([]float32, 128)
 	err = idx.Insert(1, vector)
 	if err == nil {
-		t.Error("Expected error for IVF Insert (not implemented)")
+		t.Error("Expected error for IVF Insert without storage")
 	}
 }
 
@@ -283,21 +283,29 @@ func TestNewIndex_IVF_WithStorage(t *testing.T) {
 	}
 	defer store.Close()
 
-	// IVF is a placeholder that returns successfully but operations will fail
+	// IVF can be created with storage
 	config := make(map[string]any)
 	idx, err := NewIndex(IndexTypeIVF, 128, config, store)
 	if err != nil {
-		t.Fatalf("NewIndex should succeed for IVF (placeholder): %v", err)
+		t.Fatalf("NewIndex should succeed for IVF: %v", err)
 	}
 	if idx == nil {
 		t.Fatal("NewIndex returned nil")
 	}
 
-	// Verify it's an IVF index by checking that operations fail (not implemented)
+	// Verify Insert works
 	vector := make([]float32, 128)
+	for j := range vector {
+		vector[j] = float32(j) * 0.001
+	}
 	err = idx.Insert(1, vector)
-	if err == nil {
-		t.Error("Expected error for IVF Insert (not implemented)")
+	if err != nil {
+		t.Errorf("IVF Insert should succeed, got error: %v", err)
+	}
+
+	// Verify size increased
+	if idx.Size() != 1 {
+		t.Errorf("Expected size 1 after insert, got %d", idx.Size())
 	}
 }
 
